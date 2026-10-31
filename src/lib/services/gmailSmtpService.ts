@@ -23,10 +23,10 @@ export interface SendEmailResult {
 export class GmailSmtpService {
   /**
    * Retrieves current Gmail SMTP credentials strictly from environment variables.
-   * No fallback passwords or credentials are hardcoded.
+   * Falls back to DaarAqar@gmail.com if no user environment variable is set.
    */
   public static getConfig() {
-    const user = (process.env.EMAIL_USER || process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
+    const user = (process.env.EMAIL_USER || process.env.GMAIL_USER || process.env.SMTP_USER || "DaarAqar@gmail.com").trim();
     const pass = (process.env.EMAIL_PASS || process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "").trim();
     const host = (process.env.SMTP_HOST || "smtp.gmail.com").trim();
     const port = Number(process.env.SMTP_PORT) || 465;
@@ -224,7 +224,7 @@ export class GmailSmtpService {
     if (!config.isConfigured) {
       console.log("==================================================================");
       console.log(`[Gmail SMTP Simulator] 🔑 كود استعادة كلمة المرور للبريد: ${cleanEmail} هو: [ ${otpCode} ]`);
-      console.log(`[Gmail SMTP Simulator] ℹ️ لتفعيل الإرسال الحقيقي، أضف EMAIL_USER و EMAIL_PASS في .env.local`);
+      console.log(`[Gmail SMTP Simulator] ℹ️ لتفعيل الإرسال الحقيقي، أضف EMAIL_USER=DaarAqar@gmail.com و EMAIL_PASS في .env.local`);
       console.log("==================================================================");
 
       return {
@@ -301,7 +301,7 @@ export class GmailSmtpService {
     if (!config.isConfigured) {
       console.log("==================================================================");
       console.log(`[Gmail SMTP Simulator] ✉️ تم إنشاء طلب رمز التحقق للبريد: ${cleanEmail}`);
-      console.log(`[Gmail SMTP Simulator] ℹ️ لتفعيل الإرسال الحقيقي، أضف EMAIL_USER و EMAIL_PASS في .env.local`);
+      console.log(`[Gmail SMTP Simulator] ℹ️ لتفعيل الإرسال الحقيقي، أضف EMAIL_USER=DaarAqar@gmail.com و EMAIL_PASS في .env.local`);
       console.log("==================================================================");
 
       return {
@@ -381,7 +381,7 @@ export class GmailSmtpService {
     return new Promise((resolve, reject) => {
       const cleanPass = options.pass.replace(/\s+/g, "");
       const cleanUser = options.user.trim();
-      const messageId = `<aqarpulse-${Date.now()}-${Math.random().toString(36).slice(2)}@gmail.com>`;
+      const messageId = `<DaarAqar-${Date.now()}-${Math.random().toString(36).slice(2)}@gmail.com>`;
 
       const b64Subject = Buffer.from(options.subject, "utf-8").toString("base64");
       const b64FromName = Buffer.from(options.fromName, "utf-8").toString("base64");
