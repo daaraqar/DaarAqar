@@ -7,12 +7,66 @@
  *  - عدد التعليقات المكتشفة
  * وترجع مسودة سجل CRM جاهزة للحفظ كغير مؤكد.
  *
- * يعتمد على الموديلات المتاحة فعلياً على المفتاح (تم فحصها حياً):
- * gemini-3.5-flash و gemini-3-flash-preview يدعمان الصور.
+ * الحل الجذري لخطأ 404: القائمة الديناميكية من ListModels —
+ * نجيب الموديلات المتاحة فعلياً على المفتاح ونرتبها بالأحدث أولاً،
+ * فلا فشل أبداً بسبب اسم موديل مكتوب يدوياً غير موجود.
  */
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta";
-const MODELS = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"] as const;
+
+/** ترتيب التفضيل اليدوي — يُستخدم فقط لترتيب نتائج ListModels وليس للاستدعاء مباشرة */
+const MODEL_PREFERENCE = [
+  "gemini-3-flash-preview",
+  "gemini-3.5-flash",
+  "gemini-3.8-flash",
+  "gemini-flash-latest",
+  "gemini-flash",
+];
+
+/** كاش للموديلات المتاحة — لا نستعلم من ListModels في كل طلب */
+let cachedModels: string[] | null = null;
+let cacheTime = 0;
+const CACHE_TTL_MS = 30 * 60_000; // 30 دقيقة
+
+async function fetchAvailableModels(): Promise<string[]> {
+  if (cachedModels && Date.now() - cacheTime < CACHE_TTL_MS) return cachedModels;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`${GEMINI_ENDPOINT}/models?key=${encodeURIComponent(apiKey())}&pageSize=100`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`ListModels فشل: ${res.status}`);
+    const data = await res.json();
+    const models: string[] = (data?.models || [])
+      .filter(
+        (m: any) =>
+          // يدعم التوليد النصي (وبالتالي الصور أيضاً)
+          Array.isArray(m.supportedGenerationMethods) &&
+          m.supportedGenerationMethods.includes("generateContent") &&
+          // نستبعد موديلات التضمين/الصوت/الفيديو المخصصة
+          !/embedding|aqa|tts|image|veo|imagen|banana|native-audio|live/i.test(m.name)
+      )
+      .map((m: any) => String(m.name).replace("models/", ""))
+      // الأحدث أولاً (أسماء فيها أرقام أعلى = أحدث غالباً)
+      .sort((a: string, b: string) => {
+        const prefA = MODEL_PREFERENCE.findIndex((p) => a.startsWith(p));
+        const prefB = MODEL_PREFERENCE.findIndex((p) => b.startsWith(p));
+        if (prefA !== -1 && prefB !== -1) return prefA - prefB;
+        if (prefA !== -1) return -1;
+        if (prefB !== -1) return 1;
+        return b.localeCompare(a);
+      });
+
+    if (!models.length) throw new Error("لا توجد موديلات متاحة على هذا المفتاح");
+    cachedModels = models;
+    cacheTime = Date.now();
+    return models;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export interface ExtractedEntry {
   name: string;
@@ -141,7 +195,16 @@ export async function analyzeImagesOnly(input: {
   parts.push({ text: "حلل الصور المرفقة وأعد JSON فقط." });
 
   let lastError: Error | null = null;
-  for (const model of MODELS) {
+  let models: string[];
+  try {
+    models = await fetchAvailableModels();
+  } catch (err) {
+    // لو فشل ListModels نستخدم fallback ثابت مضمون الوجود على أي مفتاح Gemini
+    models = ["gemini-2.5-flash", "gemini-2.0-flash"];
+    lastError = err instanceof Error ? err : new Error(String(err));
+  }
+
+  for (const model of models) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 50_000);
     try {
