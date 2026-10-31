@@ -12,13 +12,8 @@
 
 /** النماذج بالترتيب — أول من ينجح يُستخدم (أحدث أولاً، القديم fallback)
  * مُحدّث أكتوبر 2026 — أسماء النماذج مُتحقق منها فعلياً من مفتاح GEMINI_API_KEY */
-const GEMINI_MODELS = [
-  "gemini-4-argon",
-  "gemini-3.8-flash",
-  "gemini-3-flash-preview",
-  "gemini-flash-latest",
-  "gemini-3.5-flash-lite",
-] as const;
+import { getTextModels, blacklistModel } from "./geminiModelRegistry";
+import { getGeminiAuth } from "./geminiAuth";
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface GeminiAnalyzedLead {
@@ -135,11 +130,14 @@ async function callGeminiModel(model: string, apiKey: string, parts: any[]): Pro
   const timeout = setTimeout(() => controller.abort(), 50_000);
 
   try {
+    const auth = getGeminiAuth();
     const res = await fetch(
-      `${GEMINI_ENDPOINT}/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      auth.keyParam
+        ? `${GEMINI_ENDPOINT}/${model}:generateContent?${auth.keyParam}`
+        : `${GEMINI_ENDPOINT}/${model}:generateContent`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: auth.headers,
         body: JSON.stringify({
           contents: [{ role: "user", parts }],
           generationConfig: {
@@ -155,6 +153,8 @@ async function callGeminiModel(model: string, apiKey: string, parts: any[]): Pro
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
+      // 404/400 = الموديل غير قابل للاستدعاء على المفتاح — احذفه من القائمة فوراً
+      if (res.status === 404 || res.status === 400) blacklistModel(model);
       throw new Error(`Gemini [${model}] خطأ ${res.status}: ${errText.slice(0, 200)}`);
     }
 
@@ -198,9 +198,10 @@ export async function analyzeSocialPostWithGemini(input: GeminiAnalyzeInput): Pr
     });
   }
 
-  // Fallback chain: جرّب النماذج بالترتيب — المتاح أولاً
+  // Fallback chain: جرّب النماذج المكتشفة ديناميكياً من المفتاح نفسه
   let lastError: Error | null = null;
-  for (const model of GEMINI_MODELS) {
+  const models = await getTextModels();
+  for (const model of models) {
     try {
       const text = await callGeminiModel(model, apiKey, parts);
       const parsed = extractJson(text);

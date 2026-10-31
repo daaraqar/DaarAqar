@@ -11,18 +11,13 @@
  *  - Batch API (batchGenerateContent)
  */
 
+import { getTextModels, blacklistModel } from "./geminiModelRegistry";
+
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta";
 
-export const TOOLS_MODELS = {
-  /** النص + Grounding + URL Context — مُختبر فعلياً: 3.5-flash و3-flash-preview شغّالان على المفتاح */
-  text: ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"] as const,
-  /** توليد الصور (Nano Banana) */
-  image: ["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", "gemini-2.5-flash-image", "nano-banana-pro-preview"] as const,
-  /** تحويل النص لكلام */
-  tts: ["gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"] as const,
-  /** Embeddings */
-  embedding: "gemini-embedding-001",
-};
+const IMAGE_MODELS = ["gemini-3.1-flash-image", "gemini-3.1-flash-image-preview", "gemini-2.5-flash-image", "nano-banana-pro-preview"] as const;
+const TTS_MODELS = ["gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"] as const;
+const EMBEDDING_MODEL = "gemini-embedding-001";
 
 function apiKey(): string {
   const key = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "").trim();
@@ -54,13 +49,14 @@ async function post<T = any>(path: string, body: unknown, timeoutMs = 60_000): P
   }
 }
 
-/** سلسلة نماذج نصية مع fallback */
+/** سلسلة نماذج نصية مع fallback — مكتشفة ديناميكياً من المفتاح */
 async function callText(
   parts: any[],
   opts?: { tools?: any[]; systemInstruction?: string; temperature?: number; maxOutputTokens?: number }
 ): Promise<{ text: string; groundingSources?: Array<{ title: string; uri: string }> }> {
   let lastError: Error | null = null;
-  for (const model of TOOLS_MODELS.text) {
+  const models = await getTextModels();
+  for (const model of models) {
     try {
       const body: any = {
         contents: [{ role: "user", parts }],
@@ -95,6 +91,7 @@ async function callText(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (lastError.name === "AbortError") break;
+      if (/خطأ (404|400):/.test(lastError.message)) blacklistModel(model);
       continue;
     }
   }
@@ -161,7 +158,7 @@ export async function generatePropertyImage(prompt: string, sourceImageBase64?: 
   });
 
   let lastError: Error | null = null;
-  for (const model of TOOLS_MODELS.image) {
+  for (const model of IMAGE_MODELS) {
     try {
       const data = await post(`${model}:generateContent`, {
         contents: [{ role: "user", parts }],
@@ -193,7 +190,7 @@ export async function generatePropertyImage(prompt: string, sourceImageBase64?: 
 export async function synthesizeSpeech(text: string): Promise<{ audioBase64: string; mimeType: string }> {
   const clean = text.slice(0, 2500); // حد معقول للرسالة الواحدة
   let lastError: Error | null = null;
-  for (const model of TOOLS_MODELS.tts) {
+  for (const model of TTS_MODELS) {
     try {
       const data = await post(`${model}:generateContent`, {
         contents: [
@@ -231,10 +228,10 @@ export async function synthesizeSpeech(text: string): Promise<{ audioBase64: str
 
 /** توليد متجه دلالي لنص — 768 بعد لـ gemini-embedding-001 */
 export async function embedText(text: string): Promise<number[]> {
-  const data = await post(`models/${TOOLS_MODELS.embedding}:embedContent`, {
-    model: `models/${TOOLS_MODELS.embedding}`,
+  const data = await post(`models/${EMBEDDING_MODEL}:embedContent`, {
+    model: `models/${EMBEDDING_MODEL}`,
     content: { parts: [{ text: text.slice(0, 8000) }] },
-    // taskType لا يُرسم — قيمة افتراضية تصلح لكل الاستخدامات
+    // taskType لا يُرسل — قيمة افتراضية تصلح لكل الاستخدامات
   });
   const values = data?.embedding?.values;
   if (!Array.isArray(values) || !values.length) throw new Error("فشل توليد المتجه الدلالي");
@@ -244,10 +241,10 @@ export async function embedText(text: string): Promise<number[]> {
 /** توليد متجهات عديدة دفعة واحدة — أسرع من نداء فردي */
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   const requests = texts.map((t) => ({
-    model: `models/${TOOLS_MODELS.embedding}`,
+    model: `models/${EMBEDDING_MODEL}`,
     content: { parts: [{ text: t.slice(0, 8000) }] },
   }));
-  const data = await post(`models/${TOOLS_MODELS.embedding}:batchEmbedContents`, { requests });
+  const data = await post(`models/${EMBEDDING_MODEL}:batchEmbedContents`, { requests });
   const embeddings = data?.embeddings || [];
   if (!Array.isArray(embeddings) || embeddings.length !== texts.length) {
     throw new Error("عدد المتجهات المُرجعة غير مطابق");
@@ -284,7 +281,7 @@ export interface CachedContext {
  * على الحصة المجانية. الدالة ترجع null بهدوء والمسار المباشر يتولى الرد.
  */
 export async function createSupervisorCache(systemInstruction: string, reportContext: string): Promise<CachedContext | null> {
-  const model = "gemini-3.5-flash"; // مُختبر فعلياً على المفتاح — الوحيد الذي يسمح بإنشاء كاش
+  const model = "gemini-3.5-flash"; // مُختبَر فعلياً على المفتاح — الوحيد الذي يسمح بإنشاء كاش
   const body: Record<string, unknown> = {
     model: `models/${model}`,
     systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -320,7 +317,7 @@ export async function generateWithCache(
   }
   contents.push({ role: "user", parts: [{ text: userMessage }] });
 
-  const data = await post("gemini-3.8-flash:generateContent", {
+  const data = await post("gemini-3.5-flash:generateContent", {
     cachedContent: cacheName,
     contents,
     generationConfig: { temperature: 0.3, maxOutputTokens: 4096 },
@@ -352,7 +349,7 @@ export async function batchGenerate(
   systemInstruction?: string,
   maxOutputTokens = 4096
 ): Promise<BatchResult[]> {
-  const model = "gemini-3.8-flash";
+  const model = await (async () => (await getTextModels())[0])();
   const requests = items.map((item) => {
     const req: any = {
       contents: [{ role: "user", parts: [{ text: item.text }] }],

@@ -14,59 +14,8 @@
 
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta";
 
-/** ترتيب التفضيل اليدوي — يُستخدم فقط لترتيب نتائج ListModels وليس للاستدعاء مباشرة */
-const MODEL_PREFERENCE = [
-  "gemini-3-flash-preview",
-  "gemini-3.5-flash",
-  "gemini-3.8-flash",
-  "gemini-flash-latest",
-  "gemini-flash",
-];
-
-/** كاش للموديلات المتاحة — لا نستعلم من ListModels في كل طلب */
-let cachedModels: string[] | null = null;
-let cacheTime = 0;
-const CACHE_TTL_MS = 30 * 60_000; // 30 دقيقة
-
-async function fetchAvailableModels(): Promise<string[]> {
-  if (cachedModels && Date.now() - cacheTime < CACHE_TTL_MS) return cachedModels;
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(`${GEMINI_ENDPOINT}/models?key=${encodeURIComponent(apiKey())}&pageSize=100`, {
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`ListModels فشل: ${res.status}`);
-    const data = await res.json();
-    const models: string[] = (data?.models || [])
-      .filter(
-        (m: any) =>
-          // يدعم التوليد النصي (وبالتالي الصور أيضاً)
-          Array.isArray(m.supportedGenerationMethods) &&
-          m.supportedGenerationMethods.includes("generateContent") &&
-          // نستبعد موديلات التضمين/الصوت/الفيديو المخصصة
-          !/embedding|aqa|tts|image|veo|imagen|banana|native-audio|live/i.test(m.name)
-      )
-      .map((m: any) => String(m.name).replace("models/", ""))
-      // الأحدث أولاً (أسماء فيها أرقام أعلى = أحدث غالباً)
-      .sort((a: string, b: string) => {
-        const prefA = MODEL_PREFERENCE.findIndex((p) => a.startsWith(p));
-        const prefB = MODEL_PREFERENCE.findIndex((p) => b.startsWith(p));
-        if (prefA !== -1 && prefB !== -1) return prefA - prefB;
-        if (prefA !== -1) return -1;
-        if (prefB !== -1) return 1;
-        return b.localeCompare(a);
-      });
-
-    if (!models.length) throw new Error("لا توجد موديلات متاحة على هذا المفتاح");
-    cachedModels = models;
-    cacheTime = Date.now();
-    return models;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
+// اكتشاف النماذج ديناميكياً من الوحدة المركزية المشتركة — لا قوائم ثابتة
+import { getTextModels, blacklistModel } from "./geminiModelRegistry";
 
 export interface ExtractedEntry {
   name: string;
@@ -179,6 +128,8 @@ function toInlinePart(base64: string, mime?: string) {
   };
 }
 
+import { getGeminiAuth } from "./geminiAuth";
+
 export async function analyzeImagesOnly(input: {
   postImage?: string;
   postImageMimeType?: string;
@@ -195,35 +146,38 @@ export async function analyzeImagesOnly(input: {
   parts.push({ text: "حلل الصور المرفقة وأعد JSON فقط." });
 
   let lastError: Error | null = null;
-  let models: string[];
-  try {
-    models = await fetchAvailableModels();
-  } catch (err) {
-    // لو فشل ListModels نستخدم fallback ثابت مضمون الوجود على أي مفتاح Gemini
-    models = ["gemini-2.5-flash", "gemini-2.0-flash"];
-    lastError = err instanceof Error ? err : new Error(String(err));
-  }
-
+  const models = await getTextModels();
   for (const model of models) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 50_000);
     try {
-      const res = await fetch(`${GEMINI_ENDPOINT}/${model}:generateContent?key=${encodeURIComponent(apiKey())}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 8192,
-            responseMimeType: "application/json",
-          },
-        }),
-        signal: controller.signal,
-      });
+      const auth = getGeminiAuth();
+      const res = await fetch(
+        auth.keyParam
+          ? `${GEMINI_ENDPOINT}/${model}:generateContent?${auth.keyParam}`
+          : `${GEMINI_ENDPOINT}/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: auth.headers,
+          body: JSON.stringify({
+            contents: [{ role: "user", parts }],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 8192,
+              responseMimeType: "application/json",
+            },
+          }),
+          signal: controller.signal,
+        }
+      );
 
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
+        // 404/400 = الموديل معلن في ListModels لكنه غير قابل للاستدعاء على هذا المفتاح —
+        // نحذفه من الكاش فوراً وننتقل للتالي، فلا يُعاد تجربته في الطلبات القادمة
+        if (res.status === 404 || res.status === 400) {
+          blacklistModel(model);
+        }
         throw new Error(`Gemini [${model}] خطأ ${res.status}: ${errText.slice(0, 200)}`);
       }
 

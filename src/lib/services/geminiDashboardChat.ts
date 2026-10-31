@@ -7,13 +7,8 @@
  */
 
 /** النماذج بالترتيب — أحدث أولاً ثم القديم fallback (مُحدّث أكتوبر 2026) */
-const GEMINI_MODELS = [
-  "gemini-4-argon",
-  "gemini-3.8-flash",
-  "gemini-3-flash-preview",
-  "gemini-flash-latest",
-  "gemini-3.5-flash-lite",
-] as const;
+import { getTextModels, blacklistModel } from "./geminiModelRegistry";
+import { getGeminiAuth } from "./geminiAuth";
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface ChatTurn {
@@ -32,11 +27,14 @@ async function callGeminiModel(model: string, apiKey: string, parts: any[]): Pro
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25_000);
   try {
+    const auth = getGeminiAuth();
     const res = await fetch(
-      `${GEMINI_ENDPOINT}/${model}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      auth.keyParam
+        ? `${GEMINI_ENDPOINT}/${model}:generateContent?${auth.keyParam}`
+        : `${GEMINI_ENDPOINT}/${model}:generateContent`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: auth.headers,
         body: JSON.stringify({
           contents: [{ role: "user", parts }],
           generationConfig: {
@@ -51,6 +49,8 @@ async function callGeminiModel(model: string, apiKey: string, parts: any[]): Pro
     );
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
+      // 404/400 = الموديل غير قابل للاستدعاء على المفتاح — احذفه من القائمة فوراً
+      if (res.status === 404 || res.status === 400) blacklistModel(model);
       throw new Error(`Gemini [${model}] خطأ ${res.status}: ${errText.slice(0, 200)}`);
     }
     const data = await res.json();
@@ -89,7 +89,8 @@ export async function chatWithGemini(
   ];
 
   let lastError: Error | null = null;
-  for (const model of GEMINI_MODELS) {
+  const models = await getTextModels();
+  for (const model of models) {
     try {
       return await callGeminiModel(model, apiKey, parts);
     } catch (err) {
