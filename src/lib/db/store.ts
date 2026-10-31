@@ -57,10 +57,22 @@ export interface StoredClientRecord {
   requestedCategory?: string;
   requestedArea?: number;
   requestedPriceRange?: string;
+  /** السعر الرقمي الأدنى (بالجنيه المصري) — مستخرج بالذكاء الاصطناعي للفلترة */
+  priceMin?: number;
+  /** السعر الرقمي الأقصى (بالجنيه المصري) — مستخرج بالذكاء الاصطناعي للفلترة */
+  priceMax?: number;
+  /** نوع الصفقة: sale = بيع، rent = إيجار — للفلترة */
+  transactionType?: "sale" | "rent";
   requestedLocation?: string;
   availableListings?: string;
   listingsCount?: number;
   notes?: string;
+  /** مصدر السجل: manual = إدخال يدوي، bot = بوت Gemini، link = استخراج من رابط */
+  sourceType?: "manual" | "bot" | "link";
+  /** رابط المنشور الأصلي إن وجد */
+  sourceUrl?: string;
+  /** متجه دلالي (Embedding) للبحث المعنوي — يُحسب مرة عند الحفظ */
+  embedding?: number[];
   /** حالة التأكيد الإداري للسجل (عروض وطلبات) */
   isVerified?: boolean;
   verifiedBy?: string;

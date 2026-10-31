@@ -6,8 +6,14 @@
  * ويجيب أسئلة الإدارة بالعربية بناءً على هذه البيانات فعلياً.
  */
 
-/** النماذج بالترتيب — مُختبر فعلياً: 3-flash-preview يستجيب في ~3 ثوانٍ مع thinkingBudget:0 */
-const GEMINI_MODELS = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"] as const;
+/** النماذج بالترتيب — أحدث أولاً ثم القديم fallback (مُحدّث أكتوبر 2026) */
+const GEMINI_MODELS = [
+  "gemini-4-argon",
+  "gemini-3.8-flash",
+  "gemini-3-flash-preview",
+  "gemini-flash-latest",
+  "gemini-3.5-flash-lite",
+] as const;
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface ChatTurn {

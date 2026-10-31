@@ -10,8 +10,15 @@
  * يتطلب GEMINI_API_KEY في متغيرات البيئة (server-side only).
  */
 
-/** النماذج بالترتيب — أول من ينجح يُستخدم. 3-flash-preview أسرع (~3 ثوانٍ) */
-const GEMINI_MODELS = ["gemini-3-flash-preview", "gemini-3.8-flash", "gemini-flash-latest"] as const;
+/** النماذج بالترتيب — أول من ينجح يُستخدم (أحدث أولاً، القديم fallback)
+ * مُحدّث أكتوبر 2026 — أسماء النماذج مُتحقق منها فعلياً من مفتاح GEMINI_API_KEY */
+const GEMINI_MODELS = [
+  "gemini-4-argon",
+  "gemini-3.8-flash",
+  "gemini-3-flash-preview",
+  "gemini-flash-latest",
+  "gemini-3.5-flash-lite",
+] as const;
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface GeminiAnalyzedLead {
@@ -23,6 +30,12 @@ export interface GeminiAnalyzedLead {
   requestedCategory?: string;
   requestedArea?: number;
   requestedPriceRange?: string;
+  /** السعر الرقمي الأدنى بالجنيه — للفلترة اللاحقة */
+  priceMin?: number;
+  /** السعر الرقمي الأقصى بالجنيه — للفلترة اللاحقة */
+  priceMax?: number;
+  /** نوع الصفقة: sale (بيع) أو rent (إيجار) */
+  transactionType?: "sale" | "rent";
   requestedLocation?: string;
   availableListings?: string;
   listingsCount?: number;
@@ -59,12 +72,19 @@ const SYSTEM_PROMPT = `أنت مساعد خبير في تحليل منشورات
 2. استخرج اسم صاحب المنشور إن وُجد، وإلا استخدم "منشور فيسبوك".
 3. رقم الهاتف المصري: 01[0125]xxxxxxxxx أو +20 — إن لم يوجد في المنشور ابحث في التعليقات وضع الرئيسي في phone وأي رقم آخر في extraPhones.
 4. السعر: النص كما ورد (مثلاً "850 ألف" أو "1.2 مليون" أو "3500 شهرياً") في requestedPriceRange.
-5. التصنيف: شقة/فيلا/أرض/محل/مكتب/عمارة/استوديو... في requestedCategory.
-6. المساحة رقم فقط بالمتر في requestedArea.
-7. الموقع: القرية/الشارع/الحي في requestedLocation (نطاقنا: مركز ميت غمر والدقهلية).
-8. اجمع وصف العقار الكامل في availableListings للعروض أو requestedProperty للطلبات.
-9. confidence بين 0 و 1 حسب وضوح البيانات. اذكر في reasoning سبب التصنيف باختصار.
-10. missingFields: اذكر الحقول المهمة الناقصة (مثل "phone" أو "price").
+   وحوّل السعر لرقمين بالجنيه المصري:
+   - priceMin: أقل سعر بالجنيه (مثلاً "850 ألف" → 850000).
+   - priceMax: أقصى سعر بالجنيه (إذا كان نطاق مثل "800-950 ألف" → 950000، وإلا نفس priceMin).
+   - كلمات مثل "ألف" = ×1000، "مليون" = ×1000000، "مليار" = ×1000000000.
+   - إذا كان الإيجار شهرياً اجعل السعر هو الإيجار الشهري بالجنيه.
+5. transactionType: "sale" إن كان المنشور للبيع، "rent" إن كان للإيجار. إن لم يتضح اجعله "sale".
+6. التصنيف: اختر واحدة بالضبط من هذه القائمة في requestedCategory (استخدم أقرب كلمة إذا لم تطابق حرفياً):
+   شقة / فيلا / دوبلكس / بنتهاوس / رووف / استوديو / تاون هاوس / توين هاوس / شاليه / أرض / محل / مكتب / عيادة / مخزن / مصنع / عمارة / قطعة أرض / أخرى
+7. المساحة رقم فقط بالمتر في requestedArea.
+8. الموقع: القرية/الشارع/الحي في requestedLocation (نطاقنا: مركز ميت غمر والدقهلية).
+9. اجمع وصف العقار الكامل في availableListings للعروض أو requestedProperty للطلبات.
+10. confidence بين 0 و 1 حسب وضوح البيانات. اذكر في reasoning سبب التصنيف باختصار.
+11. missingFields: اذكر الحقول المهمة الناقصة (مثل "phone" أو "price").
 
 أعد فقط JSON بهذا الشكل بدون markdown:
 {
@@ -77,6 +97,9 @@ const SYSTEM_PROMPT = `أنت مساعد خبير في تحليل منشورات
   "requestedCategory": "...",
   "requestedArea": number | null,
   "requestedPriceRange": "...",
+  "priceMin": number | null,
+  "priceMax": number | null,
+  "transactionType": "sale" | "rent",
   "requestedLocation": "...",
   "availableListings": "...",
   "listingsCount": number | null,
@@ -199,6 +222,9 @@ export async function analyzeSocialPostWithGemini(input: GeminiAnalyzeInput): Pr
         requestedCategory: parsed.requestedCategory ? String(parsed.requestedCategory).slice(0, 80) : undefined,
         requestedArea: Number.isFinite(area) && area > 0 ? area : undefined,
         requestedPriceRange: parsed.requestedPriceRange ? String(parsed.requestedPriceRange).slice(0, 120) : undefined,
+        priceMin: Number.isFinite(Number(parsed.priceMin)) && Number(parsed.priceMin) > 0 ? Number(parsed.priceMin) : undefined,
+        priceMax: Number.isFinite(Number(parsed.priceMax)) && Number(parsed.priceMax) > 0 ? Number(parsed.priceMax) : undefined,
+        transactionType: parsed.transactionType === "rent" ? "rent" : "sale",
         requestedLocation: parsed.requestedLocation ? String(parsed.requestedLocation).slice(0, 160) : undefined,
         availableListings: parsed.availableListings ? String(parsed.availableListings).slice(0, 1000) : undefined,
         listingsCount: Number.isFinite(listings) && listings > 0 ? listings : undefined,

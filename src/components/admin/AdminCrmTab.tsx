@@ -21,6 +21,7 @@ import {
   BadgeCheck,
   CircleDashed,
   Bot,
+  SlidersHorizontal,
 } from "lucide-react";
 
 interface ClientRecord {
@@ -32,6 +33,9 @@ interface ClientRecord {
   requestedCategory?: string;
   requestedArea?: number;
   requestedPriceRange?: string;
+  priceMin?: number;
+  priceMax?: number;
+  transactionType?: "sale" | "rent";
   requestedLocation?: string;
   availableListings?: string;
   listingsCount?: number;
@@ -45,6 +49,23 @@ interface ClientRecord {
 }
 
 type RecordTypeFilter = "all" | "client" | "broker";
+type TransactionFilter = "all" | "sale" | "rent";
+
+interface FilterState {
+  category: string;
+  location: string;
+  transaction: TransactionFilter;
+  minPrice: string;
+  maxPrice: string;
+}
+
+const EMPTY_FILTERS: FilterState = {
+  category: "",
+  location: "",
+  transaction: "all",
+  minPrice: "",
+  maxPrice: "",
+};
 
 interface FormState {
   open: boolean;
@@ -101,6 +122,8 @@ export default function AdminCrmTab() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ClientRecord | null>(null);
   const [botPanelOpen, setBotPanelOpen] = useState(false);
+  const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
+  const [showFilters, setShowFilters] = useState(false);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -255,8 +278,43 @@ export default function AdminCrmTab() {
     }
   };
 
+  const activeFilterCount =
+    (filters.category ? 1 : 0) +
+    (filters.location ? 1 : 0) +
+    (filters.transaction !== "all" ? 1 : 0) +
+    (filters.minPrice ? 1 : 0) +
+    (filters.maxPrice ? 1 : 0);
+
+  // الفلترة المتقدمة — حسب المنطقة والتصنيف والسعر ونوع الصفقة
+  // ملاحظة: الفلترة السعرية تستخدم السعر الرقمي المستخرج بالذكاء الاصطناعي،
+  // وإن لم يوجد نستخرج رقمًا من النص المكتوب يدوياً كحل بديل.
+  const recordPrice = (r: ClientRecord): number | null => {
+    if (typeof r.priceMax === "number" && r.priceMax > 0) return r.priceMax;
+    if (typeof r.priceMin === "number" && r.priceMin > 0) return r.priceMin;
+    const m = (r.requestedPriceRange || "").match(/([\d,\.]+)\s*(ألف|مليون|مليار|جنيه|EGP|ج)?/i);
+    if (m) {
+      const n = Number(m[1].replace(/,/g, ""));
+      if (!Number.isFinite(n) || n <= 0) return null;
+      const unit = (m[2] || "").toLowerCase();
+      if (unit.includes("ألف")) return n * 1000;
+      if (unit.includes("مليون")) return n * 1_000_000;
+      if (unit.includes("مليار")) return n * 1_000_000_000;
+      return n;
+    }
+    return null;
+  };
+
   const filtered = records.filter((r) => {
     if (typeFilter !== "all" && r.type !== typeFilter) return false;
+    if (filters.category && (r.requestedCategory || "") !== filters.category) return false;
+    if (filters.transaction !== "all" && (r.transactionType || "sale") !== filters.transaction) return false;
+    if (filters.location && !(r.requestedLocation || "").includes(filters.location)) return false;
+    if (filters.minPrice || filters.maxPrice) {
+      const p = recordPrice(r);
+      if (p === null) return false;
+      if (filters.minPrice && p < Number(filters.minPrice)) return false;
+      if (filters.maxPrice && p > Number(filters.maxPrice)) return false;
+    }
     if (!search.trim()) return true;
     const s = search.toLowerCase();
     return (
@@ -379,9 +437,103 @@ export default function AdminCrmTab() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="ابحث بالاسم أو رقم الهاتف أو العقار المطلوب..."
-          className="w-full pr-10 pl-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
+          className="w-full pr-10 pl-24 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-400"
         />
+        <button
+          onClick={() => setShowFilters((v) => !v)}
+          className={`absolute left-2 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-lg text-[10px] font-black flex items-center gap-1 transition-all cursor-pointer ${
+            showFilters || activeFilterCount > 0
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+          title="فلترة متقدمة — المنطقة والتصنيف والسعر ونوع الصفقة"
+        >
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          فلترة
+          {activeFilterCount > 0 && (
+            <span className="w-4 h-4 rounded-full bg-white text-indigo-700 text-[9px] flex items-center justify-center font-black">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
       </div>
+
+      {/* Advanced filters */}
+      {showFilters && (
+        <div className="p-3.5 rounded-2xl border border-indigo-100 bg-indigo-50/40 space-y-3 animate-in fade-in">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-indigo-900 flex items-center gap-1.5">
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              فلترة السجلات المجمّعة — حسب المنطقة والتصنيف والسعر ونوع الصفقة
+            </span>
+            <button
+              onClick={() => setFilters(EMPTY_FILTERS)}
+              className="text-[10px] font-black text-indigo-600 hover:text-indigo-800 cursor-pointer"
+            >
+              مسح الفلاتر ↺
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 mb-1">التصنيف</label>
+              <select
+                value={filters.category}
+                onChange={(e) => setFilters({ ...filters, category: e.target.value })}
+                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              >
+                <option value="">الكل</option>
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 mb-1">المنطقة</label>
+              <input
+                value={filters.location}
+                onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+                placeholder="مثال: ميت غمر"
+                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 mb-1">نوع الصفقة</label>
+              <select
+                value={filters.transaction}
+                onChange={(e) => setFilters({ ...filters, transaction: e.target.value as TransactionFilter })}
+                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              >
+                <option value="all">الكل</option>
+                <option value="sale">بيع</option>
+                <option value="rent">إيجار</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 mb-1">أدنى سعر (جنيه)</label>
+              <input
+                type="number"
+                value={filters.minPrice}
+                onChange={(e) => setFilters({ ...filters, minPrice: e.target.value })}
+                placeholder="مثال: 500000"
+                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-slate-600 mb-1">أقصى سعر (جنيه)</label>
+              <input
+                type="number"
+                value={filters.maxPrice}
+                onChange={(e) => setFilters({ ...filters, maxPrice: e.target.value })}
+                placeholder="مثال: 1500000"
+                className="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-[11px] font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-indigo-700/70 font-bold">
+            الفلترة السعرية تعمل على السجلات التي استخرج البوت سعرها رقمياً — سجلات البوت تحفظها تلقائياً.
+          </p>
+        </div>
+      )}
 
       {/* Feedback */}
       {feedback && (
@@ -507,7 +659,14 @@ export default function AdminCrmTab() {
                   {record.requestedPriceRange && (
                     <p className="flex items-center gap-1.5">
                       <Wallet className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span>الميزانية: {record.requestedPriceRange}</span>
+                      <span>
+                        الميزانية: {record.requestedPriceRange}
+                        {record.transactionType ? (
+                          <span className={`mr-1 px-1.5 py-0.5 rounded-full text-[9px] font-black ${record.transactionType === "rent" ? "bg-sky-100 text-sky-700" : "bg-emerald-100 text-emerald-700"}`}>
+                            {record.transactionType === "rent" ? "إيجار" : "بيع"}
+                          </span>
+                        ) : null}
+                      </span>
                     </p>
                   )}
                   {record.requestedLocation && (
