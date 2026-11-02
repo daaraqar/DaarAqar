@@ -6,6 +6,10 @@
 -- 3. Storage Bucket & Strict RLS Policies for property-images
 -- ==============================================================================
 
+-- 0. Drop existing function signatures to prevent "not unique" ambiguity errors
+DROP FUNCTION IF EXISTS public.search_properties_within_bounds(double precision, double precision, double precision, double precision, transaction_type_enum, varchar, numeric, numeric, int);
+DROP FUNCTION IF EXISTS public.search_properties_within_bounds();
+
 -- 1. Viewport Bounding-Box Search Function (PostGIS ST_MakeEnvelope)
 CREATE OR REPLACE FUNCTION public.search_properties_within_bounds(
     min_lng DOUBLE PRECISION,
@@ -78,8 +82,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Grant execution to public / anon / authenticated roles
-GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds TO anon, authenticated;
+-- Grant execution to public / anon / authenticated roles with explicit parameter types
+GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds(double precision, double precision, double precision, double precision, transaction_type_enum, varchar, numeric, numeric, int) TO anon, authenticated;
 
 -- 2. Clean Egyptian Geography Hierarchy (Reference Data Only)
 DO $$
