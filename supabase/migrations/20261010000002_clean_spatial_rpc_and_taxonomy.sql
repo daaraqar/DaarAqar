@@ -1,19 +1,21 @@
--- 1. Drop all previous signatures of this function to avoid return-type conflicts
-DROP FUNCTION IF EXISTS public.search_properties_within_bounds(
-    DOUBLE PRECISION, 
-    DOUBLE PRECISION, 
-    DOUBLE PRECISION, 
-    DOUBLE PRECISION, 
-    transaction_type_enum, 
-    VARCHAR, 
-    NUMERIC, 
-    NUMERIC, 
-    INT
-);
-DROP FUNCTION IF EXISTS public.search_properties_within_bounds();
+-- 0. Force drop any existing version of the function (Cascade clears dependency locks & return-type mismatch)
+DO $$ 
+DECLARE 
+    r RECORD;
+BEGIN
+    FOR r IN 
+        SELECT p.oid::regprocedure AS func_signature
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' 
+          AND p.proname = 'search_properties_within_bounds'
+    LOOP
+        EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE;';
+    END LOOP;
+END $$;
 
--- 2. Create the function with the updated RETURN TABLE signature
-CREATE FUNCTION public.search_properties_within_bounds(
+-- 1. Create the function with the exact updated return signature
+CREATE OR REPLACE FUNCTION public.search_properties_within_bounds(
     min_lng DOUBLE PRECISION,
     min_lat DOUBLE PRECISION,
     max_lng DOUBLE PRECISION,
@@ -88,7 +90,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- 3. Grant execution explicitly with parameter signatures to avoid ambiguity
+-- 2. Grant execution permissions safely
 GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds(
     DOUBLE PRECISION, 
     DOUBLE PRECISION, 
