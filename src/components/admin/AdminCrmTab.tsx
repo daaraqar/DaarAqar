@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/apiClient";
-import GeminiBotPanel from "./GeminiBotPanel";
+import OllamaBotPanel from "./OllamaBotPanel";
 import AdminCrmImportDialog from "./AdminCrmImportDialog";
 import {
   Users,
@@ -973,8 +973,8 @@ export default function AdminCrmTab() {
         </div>
       )}
 
-      {/* Gemini Social Post Analyzer Bot */}
-      <GeminiBotPanel
+      {/* Local Ollama social post analyzer */}
+      <OllamaBotPanel
         open={botPanelOpen}
         onClose={() => setBotPanelOpen(false)}
         onSaved={fetchRecords}

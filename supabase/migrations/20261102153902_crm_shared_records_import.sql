@@ -116,7 +116,7 @@ BEGIN
       NULLIF(v_record ->> 'sourceUrl', ''),
       FALSE,
       NULLIF(v_record ->> 'createdBy', '')
-    )
+    );
     v_inserted := v_inserted + 1;
   END LOOP;
 

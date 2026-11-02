@@ -67,7 +67,7 @@ export interface StoredClientRecord {
   availableListings?: string;
   listingsCount?: number;
   notes?: string;
-  /** مصدر السجل: manual = إدخال يدوي، bot = بوت Gemini، link = استخراج من رابط */
+  /** مصدر السجل: manual = إدخال يدوي، bot = بوت التحليل، link = استخراج من رابط */
   sourceType?: "manual" | "bot" | "link" | "import";
   /** رابط المنشور الأصلي إن وجد */
   sourceUrl?: string;

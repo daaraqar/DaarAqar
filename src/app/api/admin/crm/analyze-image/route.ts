@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasAdminPermission } from "@/lib/auth/admin-permissions";
-import { analyzeImagesOnly } from "@/lib/services/geminiImageAnalyzer";
+import { analyzeImagesOnly } from "@/lib/services/ollamaImageAnalyzer";
 import { findCrmRecordsByPhones } from "@/lib/services/crmRepository";
 import { normalizeCrmPhone } from "@/lib/services/crmUtils";
 
-export const maxDuration = 60;
+export const maxDuration = 240;
 
 /**
  * POST /api/admin/crm/analyze-image

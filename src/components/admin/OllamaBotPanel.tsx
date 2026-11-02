@@ -91,7 +91,7 @@ const CATEGORY_OPTIONS = [
   "أخرى",
 ];
 
-export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
+export default function OllamaBotPanel({ open, onClose, onSaved }: Props) {
   const [postImage, setPostImage] = useState<string | null>(null);
   const [commentsImage, setCommentsImage] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -321,11 +321,11 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
             </div>
             <div>
               <h3 className="font-black text-sm text-slate-900 flex items-center gap-1.5">
-                بوت تحليل صور المنشورات
+                بوت تحليل الصور المحلي — Ollama
                 <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               </h3>
               <p className="text-[10px] text-slate-500 font-medium">
-                أرفق لقطة شاشة المنشور والتعليقات — يستخرج الأسماء والأرقام والتصنيفات تلقائياً
+                يعالج الصور محلياً على جهاز المكتب دون مفتاح API خارجي
               </p>
             </div>
           </div>
