@@ -1,0 +1,5 @@
+Welcome to the project!
+
+Project created on 2026-10-30.
+
+Feel free to edit this file.

@@ -1,0 +1,31 @@
+{
+  "appId": "com.aqarpulse.egypt",
+  "appName": "دار العقار",
+  "webDir": "out",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://DaarAqar.Vercel.app",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": true,
+    "scrollEnabled": true
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#0f172a",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0f766e"
+    }
+  }
+}

@@ -1,0 +1,472 @@
+@import url('https://fonts.googleapis.com/css2?family=Alexandria:wght@300;400;500;600;700;800;900&family=Almarai:wght@300;400;700;800&family=Cairo:wght@300;400;500;600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Tajawal:wght@300;400;500;700;800;900&display=swap');
+@import "leaflet/dist/leaflet.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-cairo: 'Cairo', sans-serif;
+  --brand-50: 240 253 250;
+  --brand-100: 204 251 241;
+  --brand-200: 153 246 228;
+  --brand-300: 94 234 212;
+  --brand-400: 45 212 191;
+  --brand-500: 20 184 166;
+  --brand-600: 13 148 136;
+  --brand-700: 15 118 110;
+  --brand-800: 17 94 89;
+  --brand-900: 19 78 74;
+  --brand-950: 4 47 46;
+  --brand-icon-color: #059669;
+  --brand-map-icon-color: #047857;
+  --brand-map-icon-active-color: #064e3b;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-3xl: 32px;
+}
+
+body {
+  font-family: var(--font-cairo);
+  background-color: #f8fafc;
+  color: #0f172a;
+  direction: rtl;
+  text-align: right;
+  overflow-x: clip;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+svg.lucide:not([class*="text-"]) {
+  color: var(--brand-icon-color);
+}
+
+body:has(.admin-dashboard-shell) main {
+  padding-bottom: 0;
+}
+
+h1, h2, h3, h4 {
+  font-weight: var(--brand-heading-weight, inherit) !important;
+}
+
+/* Mobile & Touch Optimizations */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+}
+
+/* ===== Modern mobile performance & fluidity (2025+ best practice) ===== */
+
+/* Momentum scrolling + RTL-safe overflow containers */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Prevent pull-to-refresh jank inside nested scrollables */
+.overflow-y-auto {
+  overscroll-behavior-y: contain;
+}
+
+/* GPU-accelerate animated/transitioned elements & map panes to stop jank */
+.leaflet-pane,
+.leaflet-tile,
+[class*="animate-"],
+[class*="transition-"] {
+  will-change: transform;
+  backface-visibility: hidden;
+}
+
+/* Instant tap feedback on interactive elements (matches native apps) */
+@media (hover: none) {
+  button:active,
+  a:active {
+    opacity: 0.75;
+    transform: scale(0.985);
+    transition: transform 80ms ease, opacity 80ms ease;
+  }
+}
+
+/* Respect users' reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Avoid layout shifts — images and embeds reserve space */
+img, video, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+.price-range-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.price-range-thumb::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+
+.price-range-thumb::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
+
+.price-range-thumb::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 2px solid white;
+  border-radius: 9999px;
+  background: #047857;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 35%);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.price-range-thumb::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid white;
+  border-radius: 9999px;
+  background: #047857;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 35%);
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.price-range-thumb:disabled::-webkit-slider-thumb,
+.price-range-thumb:disabled::-moz-range-thumb {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* Hide scrollbars for smooth horizontal swipe carousels on mobile */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* iOS & Android Mobile Safe Area Padding Utilities */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 1rem);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 1rem);
+}
+.pb-safe-nav {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 1rem));
+}
+.safe-area-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 1rem));
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Leaflet Overrides for Luxury Aesthetic */
+.leaflet-container {
+  font-family: var(--font-cairo) !important;
+  width: 100%;
+  height: 100%;
+  border-radius: 0.75rem;
+  z-index: 10;
+}
+
+.leaflet-popup-content-wrapper {
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 1rem !important;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  line-height: 1.5 !important;
+  direction: rtl;
+  text-align: right;
+}
+
+.leaflet-popup-tip {
+  background: white;
+}
+
+/* Custom Leaflet Pin Wrapper - Remove default background and border */
+.custom-leaflet-pin-wrapper {
+  background: transparent !important;
+  border: none !important;
+}
+
+.project-location-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Modern Pill Price Badge Map Marker */
+.modern-price-pin {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.25));
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.2s ease;
+  will-change: transform;
+}
+
+.modern-price-pin .pill-badge {
+  background: var(--brand-map-icon-color, #047857);
+  color: #ffffff;
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4.5px 9px;
+  border-radius: 9999px; /* Pill */
+  border: 1.5px solid #ffffff;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.25);
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.map-reputation-badges {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin-bottom: 2px;
+  white-space: nowrap;
+}
+
+.map-reputation-badge {
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 9999px;
+  padding: 2px 5px;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.25;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.28);
+}
+
+.map-reputation-badge.seller {
+  background: #1d4ed8;
+}
+
+.map-reputation-badge.project {
+  background: #c2410c;
+}
+
+.modern-price-pin .pin-tip {
+  width: 0;
+  height: 0;
+  border-left: 4.5px solid transparent;
+  border-right: 4.5px solid transparent;
+  border-top: 5.5px solid var(--brand-map-icon-color, #047857);
+  margin-top: -1px;
+  transition: border-top-color 0.2s ease;
+}
+
+.modern-price-pin:hover,
+.modern-price-pin.active {
+  transform: scale(1.15) translateY(-3px);
+  filter: drop-shadow(0 8px 14px rgba(15, 23, 42, 0.35));
+  z-index: 1000 !important;
+}
+
+.modern-price-pin.active .pill-badge {
+  background: var(--brand-map-icon-active-color, #064e3b);
+  border-color: #fde047;
+  box-shadow: 0 0 0 2px rgba(253, 224, 71, 0.45), 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.modern-price-pin.active .pin-tip {
+  border-top-color: var(--brand-map-icon-active-color, #064e3b);
+}
+
+/* Saudi Aqar Style Green Pin Marker (Backwards Compatibility) */
+.saudi-aqar-marker {
+  position: relative;
+  background-color: #047857;
+  color: white;
+  font-weight: 800;
+  font-size: 11px;
+  padding: 4.5px 9px;
+  border-radius: 9999px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid white;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.saudi-aqar-marker::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5.5px 4.5px 0;
+  border-style: solid;
+  border-color: #047857 transparent transparent;
+  display: block;
+  width: 0;
+}
+.saudi-aqar-marker:hover,
+.saudi-aqar-marker.active {
+  background-color: #064e3b;
+  border-color: #fde047;
+  transform: scale(1.15) translateY(-3px);
+  box-shadow: 0 8px 16px rgba(4, 120, 87, 0.45);
+  z-index: 1000 !important;
+}
+.saudi-aqar-marker.active::after {
+  border-color: #064e3b transparent transparent;
+}
+
+/* Custom Price Badge Map Marker */
+.custom-map-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #0f766e;
+  color: white;
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  border: 2px solid white;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+}
+
+.custom-map-marker:hover,
+.custom-map-marker.active {
+  background-color: #d97706;
+  transform: scale(1.15) translateY(-3px);
+  box-shadow: 0 10px 15px -3px rgba(217, 119, 6, 0.4);
+  z-index: 1000 !important;
+}
+
+@keyframes markerPulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.8), 0 10px 15px -3px rgba(217, 119, 6, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(217, 119, 6, 0), 0 10px 15px -3px rgba(217, 119, 6, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(217, 119, 6, 0), 0 10px 15px -3px rgba(217, 119, 6, 0.4);
+  }
+}
+
+.custom-map-marker.active {
+  animation: markerPulse 2s infinite ease-out;
+}
+
+.custom-map-marker.rent {
+  background-color: #2563eb;
+}
+.custom-map-marker.rent:hover,
+.custom-map-marker.rent.active {
+  background-color: #d97706;
+}
+
+.cluster-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0f766e, #042f2e);
+  color: white;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 0.875rem;
+  border: 3px solid white;
+  box-shadow: 0 10px 15px -3px rgba(15, 118, 110, 0.4);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.cluster-marker:hover {
+  transform: scale(1.1);
+}
+
+/* User Radar Location Pin */
+@keyframes userRadarPulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+.user-radar-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Hide Leaflet Map Zoom in / Zoom out buttons completely */
+.leaflet-control-zoom,
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Hardware-Accelerated Leaflet Map Performance */
+.leaflet-container {
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+.leaflet-tile {
+  will-change: transform, opacity;
+  image-rendering: -webkit-optimize-contrast;
+}
+.modern-price-pin {
+  will-change: transform;
+  transform: translateZ(0);
+}
