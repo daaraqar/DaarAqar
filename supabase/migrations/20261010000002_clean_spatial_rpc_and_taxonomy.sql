@@ -6,12 +6,12 @@
 -- 3. Storage Bucket & Strict RLS Policies for property-images
 -- ==============================================================================
 
--- 0. Drop existing function signatures to prevent "not unique" ambiguity errors
+-- 0. Drop the function completely first to avoid return type change conflicts
 DROP FUNCTION IF EXISTS public.search_properties_within_bounds(double precision, double precision, double precision, double precision, transaction_type_enum, varchar, numeric, numeric, int);
 DROP FUNCTION IF EXISTS public.search_properties_within_bounds();
 
 -- 1. Viewport Bounding-Box Search Function (PostGIS ST_MakeEnvelope)
-CREATE OR REPLACE FUNCTION public.search_properties_within_bounds(
+CREATE FUNCTION public.search_properties_within_bounds(
     min_lng DOUBLE PRECISION,
     min_lat DOUBLE PRECISION,
     max_lng DOUBLE PRECISION,
@@ -38,6 +38,8 @@ RETURNS TABLE (
     location_privacy location_privacy_enum,
     exact_lat DOUBLE PRECISION,
     exact_lng DOUBLE PRECISION,
+    latitude DOUBLE PRECISION,
+    longitude DOUBLE PRECISION,
     approximate_lat DOUBLE PRECISION,
     approximate_lng DOUBLE PRECISION,
     status property_status_enum,
@@ -63,6 +65,8 @@ BEGIN
         p.location_privacy,
         p.exact_lat,
         p.exact_lng,
+        p.latitude,
+        p.longitude,
         p.approximate_lat,
         p.approximate_lng,
         p.status,
@@ -71,7 +75,7 @@ BEGIN
         p.created_at
     FROM public.properties p
     WHERE 
-        p.status = 'published'
+        p.status::text IN ('active', 'published')
         AND p.location && ST_MakeEnvelope(min_lng, min_lat, max_lng, max_lat, 4326)::geography
         AND (filter_transaction_type IS NULL OR p.transaction_type = filter_transaction_type)
         AND (filter_category IS NULL OR p.category = filter_category)
@@ -82,7 +86,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Grant execution to public / anon / authenticated roles with explicit parameter types
+-- Grant execution to public / anon / authenticated roles
 GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds(double precision, double precision, double precision, double precision, transaction_type_enum, varchar, numeric, numeric, int) TO anon, authenticated;
 
 -- 2. Clean Egyptian Geography Hierarchy (Reference Data Only)
