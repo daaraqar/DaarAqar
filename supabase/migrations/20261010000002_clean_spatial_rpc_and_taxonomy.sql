@@ -1,11 +1,24 @@
 -- ==============================================================================
--- AqarPulse — Clean Additive Migration 
+-- AqarPulse — Emergency Final Fix for Spatial RPC
 -- ==============================================================================
 
--- 1. إسقاط الدالة القديمة نهائياً وبشكل قسري لتجنب أي تعارض في المخرجات أو الأنواع
-DROP FUNCTION IF EXISTS public.search_properties_within_bounds CASCADE;
+-- 1. إسقاط وحذف أي دالة سابقة بهذا الاسم مهما كانت مدخلاتها أو مخرجاتها قسرياً
+DO $$ 
+DECLARE 
+    r RECORD;
+BEGIN
+    FOR r IN 
+        SELECT p.oid::regprocedure AS func_signature
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' 
+          AND p.proname = 'search_properties_within_bounds'
+    LOOP
+        EXECUTE 'DROP FUNCTION IF EXISTS ' || r.func_signature || ' CASCADE;';
+    END LOOP;
+END $$;
 
--- 2. إنشاء الدالة بالهيكل المطلوب والمحدث
+-- 2. إنشاء الدالة بالهيكل الصحيح تماماً
 CREATE FUNCTION public.search_properties_within_bounds(
     min_lng DOUBLE PRECISION,
     min_lat DOUBLE PRECISION,
@@ -81,25 +94,5 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- 3. منح الصلاحيات بدقة
+-- 3. منح الصلاحيات
 GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, transaction_type_enum, VARCHAR, NUMERIC, NUMERIC, INT) TO anon, authenticated;
-
--- 4. مرجع الجغرافيا والبيانات الأساسية لمصر
-DO $$
-DECLARE
-    v_country_id UUID := 'c0000000-0000-0000-0000-000000000001'::uuid;
-    v_cairo_id UUID := 'c1000000-0000-0000-0000-000000000001'::uuid;
-    v_giza_id UUID := 'c2000000-0000-0000-0000-000000000002'::uuid;
-    v_alex_id UUID := 'c3000000-0000-0000-0000-000000000003'::uuid;
-BEGIN
-    INSERT INTO public.countries (id, iso_code, name_ar, name_en, currency_code)
-    VALUES (v_country_id, 'EG', 'جمهورية مصر العربية', 'Egypt', 'EGP')
-    ON CONFLICT (iso_code) DO NOTHING;
-
-    INSERT INTO public.cities (id, country_id, slug, name_ar, name_en, center_location, zoom_level)
-    VALUES 
-        (v_cairo_id, v_country_id, 'cairo', 'القاهرة', 'Cairo', ST_SetSRID(ST_MakePoint(31.2357, 30.0444), 4326)::geography, 12),
-        (v_giza_id, v_country_id, 'giza', 'الجيزة', 'Giza', ST_SetSRID(ST_MakePoint(31.1303, 29.9870), 4326)::geography, 12),
-        (v_alex_id, v_country_id, 'alexandria', 'الإسكندرية', 'Alexandria', ST_SetSRID(ST_MakePoint(29.9553, 31.2001), 4326)::geography, 12)
-    ON CONFLICT (slug) DO NOTHING;
-END $$;
