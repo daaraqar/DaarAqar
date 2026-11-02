@@ -1,16 +1,18 @@
--- ==============================================================================
--- AqarPulse — Clean Additive Migration (Zero Fake Users, Zero Invented Listings)
--- Includes:
--- 1. PostGIS Bounding-Box Viewport RPC (search_properties_within_bounds)
--- 2. Clean Egyptian Geography Hierarchy (Countries, Cities, Districts)
--- 3. Storage Bucket & Strict RLS Policies for property-images
--- ==============================================================================
-
--- 0. Drop the function completely first to avoid return type change conflicts
-DROP FUNCTION IF EXISTS public.search_properties_within_bounds(double precision, double precision, double precision, double precision, transaction_type_enum, varchar, numeric, numeric, int);
+-- 1. Drop all previous signatures of this function to avoid return-type conflicts
+DROP FUNCTION IF EXISTS public.search_properties_within_bounds(
+    DOUBLE PRECISION, 
+    DOUBLE PRECISION, 
+    DOUBLE PRECISION, 
+    DOUBLE PRECISION, 
+    transaction_type_enum, 
+    VARCHAR, 
+    NUMERIC, 
+    NUMERIC, 
+    INT
+);
 DROP FUNCTION IF EXISTS public.search_properties_within_bounds();
 
--- 1. Viewport Bounding-Box Search Function (PostGIS ST_MakeEnvelope)
+-- 2. Create the function with the updated RETURN TABLE signature
 CREATE FUNCTION public.search_properties_within_bounds(
     min_lng DOUBLE PRECISION,
     min_lat DOUBLE PRECISION,
@@ -86,97 +88,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Grant execution to public / anon / authenticated roles
-GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds(double precision, double precision, double precision, double precision, transaction_type_enum, varchar, numeric, numeric, int) TO anon, authenticated;
-
--- 2. Clean Egyptian Geography Hierarchy (Reference Data Only)
-DO $$
-DECLARE
-    v_country_id UUID := 'c0000000-0000-0000-0000-000000000001'::uuid;
-    v_cairo_id UUID := 'c1000000-0000-0000-0000-000000000001'::uuid;
-    v_giza_id UUID := 'c2000000-0000-0000-0000-000000000002'::uuid;
-    v_alex_id UUID := 'c3000000-0000-0000-0000-000000000003'::uuid;
-BEGIN
-    -- Country: Egypt
-    INSERT INTO public.countries (id, iso_code, name_ar, name_en, currency_code)
-    VALUES (v_country_id, 'EG', 'جمهورية مصر العربية', 'Egypt', 'EGP')
-    ON CONFLICT (iso_code) DO NOTHING;
-
-    -- Cities: Cairo, Giza, Alexandria
-    INSERT INTO public.cities (id, country_id, slug, name_ar, name_en, center_location, zoom_level)
-    VALUES 
-        (v_cairo_id, v_country_id, 'cairo', 'القاهرة', 'Cairo', ST_SetSRID(ST_MakePoint(31.2357, 30.0444), 4326)::geography, 12),
-        (v_giza_id, v_country_id, 'giza', 'الجيزة', 'Giza', ST_SetSRID(ST_MakePoint(31.1303, 29.9870), 4326)::geography, 12),
-        (v_alex_id, v_country_id, 'alexandria', 'الإسكندرية', 'Alexandria', ST_SetSRID(ST_MakePoint(29.9553, 31.2001), 4326)::geography, 12)
-    ON CONFLICT (slug) DO NOTHING;
-
-    -- Districts
-    INSERT INTO public.districts (city_id, slug, name_ar, name_en, center_location)
-    VALUES 
-        (v_cairo_id, 'new-cairo', 'القاهرة الجديدة (التجمع الخامس)', 'New Cairo (Fifth Settlement)', ST_SetSRID(ST_MakePoint(31.4700, 30.0200), 4326)::geography),
-        (v_cairo_id, 'new-capital', 'العاصمة الإدارية الجديدة', 'New Administrative Capital', ST_SetSRID(ST_MakePoint(31.7500, 30.0100), 4326)::geography),
-        (v_cairo_id, 'maadi', 'المعادي', 'Maadi', ST_SetSRID(ST_MakePoint(31.2600, 29.9600), 4326)::geography),
-        (v_cairo_id, 'heliopolis', 'مصر الجديدة', 'Heliopolis', ST_SetSRID(ST_MakePoint(31.3300, 30.0900), 4326)::geography),
-        (v_cairo_id, 'nasr-city', 'مدينة نصر', 'Nasr City', ST_SetSRID(ST_MakePoint(31.3400, 30.0500), 4326)::geography),
-        (v_cairo_id, 'shorouk', 'الشروق', 'El Shorouk', ST_SetSRID(ST_MakePoint(31.6300, 30.1300), 4326)::geography),
-        (v_cairo_id, 'madinaty', 'مدينتي', 'Madinaty', ST_SetSRID(ST_MakePoint(31.6300, 30.0800), 4326)::geography),
-        (v_giza_id, 'sheikh-zayed', 'الشيخ زايد', 'Sheikh Zayed City', ST_SetSRID(ST_MakePoint(30.9800, 30.0500), 4326)::geography),
-        (v_giza_id, '6th-october', 'السادس من أكتوبر', '6th of October City', ST_SetSRID(ST_MakePoint(30.9300, 29.9700), 4326)::geography),
-        (v_giza_id, 'dokki', 'الدقي', 'Dokki', ST_SetSRID(ST_MakePoint(31.2100, 30.0400), 4326)::geography),
-        (v_giza_id, 'mohandessin', 'المهندسين', 'Mohandessin', ST_SetSRID(ST_MakePoint(31.2000, 30.0550), 4326)::geography)
-    ON CONFLICT (city_id, slug) DO NOTHING;
-END $$;
-
--- 3. Storage Bucket Configuration (property-images)
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-    'property-images',
-    'property-images',
-    true,
-    10485760, -- 10MB per file
-    ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/avif']
-)
-ON CONFLICT (id) DO UPDATE SET
-    public = true,
-    file_size_limit = 10485760,
-    allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
-
--- Storage Policies with User Isolation
-DO $$ BEGIN
-    DROP POLICY IF EXISTS "Public Read Property Images Bucket" ON storage.objects;
-    DROP POLICY IF EXISTS "Authenticated users can upload property images" ON storage.objects;
-    DROP POLICY IF EXISTS "Users can update their own uploaded property images" ON storage.objects;
-    DROP POLICY IF EXISTS "Users can delete their own uploaded property images" ON storage.objects;
-EXCEPTION WHEN OTHERS THEN NULL; END $$;
-
-CREATE POLICY "Public Read Property Images Bucket"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'property-images');
-
-CREATE POLICY "Authenticated users can upload property images"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-    bucket_id = 'property-images' 
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-);
-
-CREATE POLICY "Users can update their own uploaded property images"
-ON storage.objects FOR UPDATE
-TO authenticated
-USING (
-    bucket_id = 'property-images' 
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-)
-WITH CHECK (
-    bucket_id = 'property-images' 
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-);
-
-CREATE POLICY "Users can delete their own uploaded property images"
-ON storage.objects FOR DELETE
-TO authenticated
-USING (
-    bucket_id = 'property-images' 
-    AND (storage.foldername(name))[1] = (SELECT auth.uid())::text
-);
+-- 3. Grant execution explicitly with parameter signatures to avoid ambiguity
+GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds(
+    DOUBLE PRECISION, 
+    DOUBLE PRECISION, 
+    DOUBLE PRECISION, 
+    DOUBLE PRECISION, 
+    transaction_type_enum, 
+    VARCHAR, 
+    NUMERIC, 
+    NUMERIC, 
+    INT
+) TO anon, authenticated;
