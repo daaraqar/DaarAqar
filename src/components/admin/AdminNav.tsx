@@ -51,7 +51,7 @@ export default function AdminNav() {
   };
 
   return (
-    <header className="bg-slate-900 border-b border-slate-800 text-white sticky top-0 z-50 shadow-md">
+    <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/95 text-slate-900 shadow-sm backdrop-blur-xl">
       <div className="mx-auto max-w-[1600px] px-4 sm:px-6 xl:px-10">
         <div
           className="flex items-center justify-between py-2"
@@ -66,19 +66,19 @@ export default function AdminNav() {
               height={50}
               unoptimized
               style={{ height: `${getBrandLogoHeightPx(visualIdentity)}px`, width: "auto" }}
-              className="rounded-lg bg-white object-contain"
+              className="rounded-xl border border-slate-100 bg-white object-contain p-1"
             />
             <div>
               <div className="flex items-center gap-2">
-                <span className="font-black text-sm tracking-tight text-white">
+                <span className="text-sm font-black tracking-tight text-slate-950">
                   {visualIdentity.siteName || "دار العقار"}
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  شركة الإدارة
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-800">
+                  مساحة الفريق
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium block">
-                لوحة التحكم المركزية • الإدارة العليا
+              <span className="block text-[10px] font-medium text-slate-500">
+                إدارة المنصة ومتابعة أعمالها
               </span>
             </div>
           </div>
@@ -88,7 +88,7 @@ export default function AdminNav() {
             <Link
               href="/"
               target="_blank"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-colors border border-slate-700"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
             >
               <span>معاينة المنصة</span>
               <ExternalLink className="w-3.5 h-3.5" />
@@ -97,7 +97,7 @@ export default function AdminNav() {
             <button
               type="button"
               onClick={handleLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 hover:text-rose-300 text-xs font-bold transition-colors border border-rose-500/20"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100"
               title="تسجيل الخروج"
             >
               <LogOut className="w-3.5 h-3.5" />
