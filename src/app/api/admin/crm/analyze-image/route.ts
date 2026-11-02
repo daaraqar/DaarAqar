@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { dbStore } from "@/lib/db/store";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasAdminPermission } from "@/lib/auth/admin-permissions";
 import { analyzeImagesOnly } from "@/lib/services/geminiImageAnalyzer";
+import { findCrmRecordsByPhones } from "@/lib/services/crmRepository";
+import { normalizeCrmPhone } from "@/lib/services/crmUtils";
 
 export const maxDuration = 60;
 
@@ -20,7 +21,7 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage") && !hasAdminPermission(user, "support.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح، يتطلب صلاحية إدارة السجلات" }, { status: 403 });
     }
 
@@ -47,9 +48,13 @@ export async function POST(req: Request) {
 
     // حارس التكرار — نفس الرقم مسجل مسبقاً؟
     let duplicateOf: string | null = null;
-    if (analysis.draft?.phone) {
-      const existing = dbStore.getClientRecords().find((r) => r.phone === analysis.draft!.phone);
+    const extractedPhone = normalizeCrmPhone(String(analysis.draft?.phone || ""));
+    if (extractedPhone) {
+      const [existing] = await findCrmRecordsByPhones([extractedPhone]);
       if (existing) duplicateOf = `${existing.name} (${existing.phone})`;
+    }
+    if (analysis.draft) {
+      analysis.draft.phone = extractedPhone;
     }
 
     return NextResponse.json({

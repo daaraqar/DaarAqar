@@ -7,7 +7,10 @@ import {
   createAdminClient,
   createClient as createSupabaseServerClient,
 } from "@/utils/supabase/server";
-import { hasAdminPermission } from "@/lib/auth/admin-permissions";
+import {
+  hasAdminPermission,
+  hasUnrestrictedAdminAccess,
+} from "@/lib/auth/admin-permissions";
 import { applyApprovedPublisherRole } from "@/lib/services/publisher-role";
 import type { ProjectAuditAction } from "@/lib/db/store";
 
@@ -188,6 +191,7 @@ export async function POST(req: Request) {
     // Enforce separation of duties: Owner/broker cannot approve their own listing even if they have admin role
     let propAdvertiserId: string | null = null;
     let propAdvertiserType: "owner" | "broker" | null = null;
+    let propCurrentStatus: string | null = null;
     const authorization = req.headers.get("authorization");
     const authToken = authorization?.toLowerCase().startsWith("bearer ")
       ? authorization.slice(7).trim()
@@ -199,7 +203,7 @@ export async function POST(req: Request) {
     if (isUuid && useCloud) {
       const { data: cloudCheck, error: cloudCheckError } = await supabase
         .from("properties")
-        .select("advertiser_id, advertiser_type, title, user_id, owner_id")
+        .select("advertiser_id, advertiser_type, title, user_id, owner_id, status")
         .eq("id", propertyId)
         .maybeSingle();
       if (cloudCheckError) {
@@ -214,12 +218,14 @@ export async function POST(req: Request) {
       if (cloudCheck) {
         propAdvertiserId = cloudCheck.advertiser_id;
         propAdvertiserType = cloudCheck.advertiser_type === "broker" ? "broker" : "owner";
+        propCurrentStatus = cloudCheck.status;
       }
     } else {
       const localProp = dbStore.getRawPropertyById(propertyId);
       if (localProp) {
         propAdvertiserId = localProp.advertiserId;
         propAdvertiserType = localProp.advertiserType;
+        propCurrentStatus = localProp.status;
       }
     }
 
@@ -239,41 +245,40 @@ export async function POST(req: Request) {
 
     let updatedCloudRecord: any = null;
     if (isUuid && useCloud) {
-      const nowIso = new Date().toISOString();
-      const { data: cloudUpdated, error: supaModErr } = await supabase
-        .from("properties")
-        .update({
-          status: targetStatus,
-          moderation_notes: reason || null,
-          approved_at: targetStatus === "active" ? nowIso : null,
-          published_at: targetStatus === "active" ? nowIso : null,
-          moderated_at: nowIso,
-          updated_at: nowIso,
-        })
-        .eq("id", propertyId)
-        .select()
-        .single();
-
-      if (!supaModErr && cloudUpdated) {
-        updatedCloudRecord = cloudUpdated;
-      } else {
-        // High-reliability fallback using dedicated RPC
-        if (decision === "approve") {
-          const { data: rpcRes, error: rpcErr } = await supabase.rpc("admin_approve_property", {
-            p_property_id: propertyId,
-            p_notes: reason || null,
-          });
-          if (!rpcErr && (rpcRes?.success || rpcRes?.id)) {
-            const { data: reloaded } = await supabase.from("properties").select("*").eq("id", propertyId).single();
-            if (reloaded) updatedCloudRecord = reloaded;
-          }
+      const { data: rpcResult, error: moderationError } = await createAdminClient().rpc(
+        "admin_moderate_review_property",
+        {
+          p_property_id: propertyId,
+          p_actor_id: user.id,
+          p_expected_status: propCurrentStatus || "",
+          p_target_status: targetStatus,
+          p_reason: reason || null,
+          p_force: hasUnrestrictedAdminAccess(user),
         }
-      }
-      if (!updatedCloudRecord) {
+      );
+      if (moderationError) {
+        console.error("[Moderation] Atomic moderation RPC failed:", moderationError);
         return NextResponse.json(
-          { error: `تعذر حفظ قرار المراجعة: ${supaModErr?.message || "لم يتم تحديث سجل العقار"}` },
-          { status: 500 }
+          { error: "تعذر تنفيذ القرار بشكل آمن. تأكد من تطبيق ترحيل توزيع مهام المراجعة ثم أعد المحاولة." },
+          { status: 503 }
         );
+      }
+      if (!rpcResult?.success) {
+        const code = rpcResult?.code;
+        const message = code === "assigned_to_other"
+          ? "هذا الإعلان مسند لموظف آخر. لا يمكن اتخاذ القرار قبل استلام المهمة."
+          : code === "stale_status"
+          ? "تغيّرت حالة الإعلان في جلسة موظف آخر. حدّث القائمة قبل اتخاذ القرار."
+          : code === "property_not_found"
+          ? "العقار غير موجود."
+          : code === "invalid_transition"
+          ? "لا يمكن تطبيق هذا القرار على الحالة الحالية للإعلان. حدّث القائمة."
+          : "تعذر اتخاذ القرار الإداري؛ حدّث الإعلان وحاول مرة أخرى.";
+        return NextResponse.json({ error: message, code }, { status: code === "property_not_found" ? 404 : 409 });
+      }
+      updatedCloudRecord = rpcResult.property;
+      if (!updatedCloudRecord) {
+        return NextResponse.json({ error: "لم يُرجع الخادم سجل الإعلان بعد تحديثه." }, { status: 500 });
       }
     }
 

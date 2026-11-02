@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { dbStore } from "@/lib/db/store";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasAdminPermission } from "@/lib/auth/admin-permissions";
 import { embedText, cosineSimilarity, isGeminiConfigured } from "@/lib/services/geminiTools";
+import { getCrmRecords } from "@/lib/services/crmRepository";
 import type { StoredClientRecord } from "@/lib/db/store";
 
 export const maxDuration = 60;
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage") && !hasAdminPermission(user, "support.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
     }
     if (!isGeminiConfigured()) {
@@ -44,7 +44,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "اكتب استعلاماً للبحث الدلالي (حرفان على الأقل)" }, { status: 400 });
     }
 
-    const records = dbStore.getClientRecords();
+    const records = await getCrmRecords();
     if (!records.length) {
       return NextResponse.json({ results: [], message: "لا توجد سجلات بعد" });
     }

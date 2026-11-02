@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
-import { dbStore } from "@/lib/db/store";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasAdminPermission } from "@/lib/auth/admin-permissions";
-import type { ClientRecordType } from "@/lib/db/store";
-
-const PHONE_REGEX = /^(\+?2)?01[0125][0-9]{8}$/;
+import type { ClientRecordType, StoredClientRecord } from "@/lib/db/store";
+import {
+  createCrmRecord,
+  CrmDuplicateError,
+  deleteCrmRecord,
+  findCrmRecordsByPhones,
+  getCrmRecords,
+  updateCrmRecord,
+} from "@/lib/services/crmRepository";
+import { normalizeCrmPhone } from "@/lib/services/crmUtils";
 
 export async function GET(req: Request) {
   try {
@@ -12,14 +18,14 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage") && !hasAdminPermission(user, "support.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح، يتطلب صلاحية إدارة السجلات" }, { status: 403 });
     }
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
     const search = searchParams.get("search")?.toLowerCase();
 
-    let records = dbStore.getClientRecords();
+    let records = await getCrmRecords();
     if (type === "client" || type === "broker") {
       records = records.filter((r) => r.type === type);
     }
@@ -46,7 +52,7 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage") && !hasAdminPermission(user, "support.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح، يتطلب صلاحية إدارة السجلات" }, { status: 403 });
     }
     const body = await req.json();
@@ -65,6 +71,8 @@ export async function POST(req: Request) {
       availableListings,
       listingsCount,
       notes,
+      sourceType,
+      sourceUrl,
     } = body || {};
 
     if (type !== "client" && type !== "broker") {
@@ -73,12 +81,22 @@ export async function POST(req: Request) {
     if (!name || typeof name !== "string" || name.trim().length < 2 || name.trim().length > 120) {
       return NextResponse.json({ error: "الاسم مطلوب (من حرفين إلى 120 حرفاً)" }, { status: 400 });
     }
-    const normalizedPhone = String(phone || "").replace(/[\s-]/g, "");
-    if (!PHONE_REGEX.test(normalizedPhone)) {
+    const normalizedPhone = normalizeCrmPhone(String(phone || ""));
+    if (!normalizedPhone) {
       return NextResponse.json(
         { error: "رقم هاتف مصري غير صالح — يجب أن يبدأ بـ 010 أو 011 أو 012 أو 015" },
         { status: 400 }
       );
+    }
+    const recordSource = sourceType === "bot" || sourceType === "link" ? sourceType : "manual";
+    if (recordSource !== "manual") {
+      const duplicates = await findCrmRecordsByPhones([normalizedPhone]);
+      if (duplicates.length) {
+        return NextResponse.json(
+          { error: `هذا الرقم مسجل بالفعل باسم ${duplicates[0].name}`, duplicate: duplicates[0] },
+          { status: 409 }
+        );
+      }
     }
     if (type === "client" && !requestedProperty && !requestedCategory) {
       return NextResponse.json(
@@ -90,7 +108,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "العروض المتاحة مطلوبة للسمسار" }, { status: 400 });
     }
 
-    const record = dbStore.createClientRecord(
+    const record = await createCrmRecord(
       {
         type: type as ClientRecordType,
         name: name.trim(),
@@ -106,11 +124,17 @@ export async function POST(req: Request) {
         availableListings: availableListings?.trim() || undefined,
         listingsCount: Number.isFinite(Number(listingsCount)) ? Number(listingsCount) : undefined,
         notes: notes?.trim() || undefined,
+        sourceType: recordSource,
+        sourceUrl: typeof sourceUrl === "string" ? sourceUrl.slice(0, 2000) : undefined,
+        isVerified: false,
       },
       user
     );
     return NextResponse.json({ success: true, record, message: "تم حفظ السجل بنجاح" }, { status: 201 });
   } catch (err: unknown) {
+    if (err instanceof CrmDuplicateError) {
+      return NextResponse.json({ error: err.message, duplicate: err.duplicate }, { status: 409 });
+    }
     const message = err instanceof Error ? err.message : "خطأ أثناء حفظ السجل";
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -122,17 +146,39 @@ export async function PATCH(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage") && !hasAdminPermission(user, "support.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح، يتطلب صلاحية إدارة السجلات" }, { status: 403 });
     }
     const body = await req.json();
-    const { id, isVerified, ...updates } = body || {};
+    const { id, isVerified } = body || {};
     if (!id) {
       return NextResponse.json({ error: "معرف السجل مطلوب" }, { status: 400 });
     }
+    const updates: Partial<StoredClientRecord> = {};
+    const editableFields: Array<keyof StoredClientRecord> = [
+      "type",
+      "name",
+      "phone",
+      "requestedProperty",
+      "requestedCategory",
+      "requestedArea",
+      "requestedPriceRange",
+      "priceMin",
+      "priceMax",
+      "transactionType",
+      "requestedLocation",
+      "availableListings",
+      "listingsCount",
+      "notes",
+    ];
+    for (const field of editableFields) {
+      if (body[field] !== undefined) {
+        Object.assign(updates, { [field]: body[field] });
+      }
+    }
     if (updates.phone !== undefined) {
-      const normalizedPhone = String(updates.phone || "").replace(/[\s-]/g, "");
-      if (!PHONE_REGEX.test(normalizedPhone)) {
+      const normalizedPhone = normalizeCrmPhone(String(updates.phone || ""));
+      if (!normalizedPhone) {
         return NextResponse.json({ error: "رقم هاتف مصري غير صالح" }, { status: 400 });
       }
       updates.phone = normalizedPhone;
@@ -143,7 +189,7 @@ export async function PATCH(req: Request) {
       updates.verifiedBy = isVerified ? (user.name || user.email || "الإدارة") : undefined;
       updates.verifiedAt = isVerified ? new Date().toISOString() : undefined;
     }
-    const record = dbStore.updateClientRecord(id, updates, user);
+    const record = await updateCrmRecord(id, updates, user);
     return NextResponse.json({ success: true, record, message: "تم تحديث السجل بنجاح" });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "خطأ أثناء تحديث السجل";
@@ -157,7 +203,7 @@ export async function DELETE(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح، يتطلب صلاحية إدارة السجلات" }, { status: 403 });
     }
     const { searchParams } = new URL(req.url);
@@ -165,7 +211,7 @@ export async function DELETE(req: Request) {
     if (!id) {
       return NextResponse.json({ error: "معرف السجل مطلوب" }, { status: 400 });
     }
-    dbStore.deleteClientRecord(id, user);
+    await deleteCrmRecord(id, user);
     return NextResponse.json({ success: true, message: "تم حذف السجل بنجاح" });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "خطأ أثناء حذف السجل";

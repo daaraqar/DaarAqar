@@ -26,6 +26,7 @@
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
+    "exceljs": "4.4.0",
     "jsonwebtoken": "^9.0.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.453.0",

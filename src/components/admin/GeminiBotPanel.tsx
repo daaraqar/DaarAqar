@@ -102,6 +102,7 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
   const [result, setResult] = useState<AnalyzeResult | null>(null);
   const [draft, setDraft] = useState<AnalyzeDraft | null>(null);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+  const [duplicateOf, setDuplicateOf] = useState<string | null>(null);
   const postInputRef = useRef<HTMLInputElement>(null);
   const commentsInputRef = useRef<HTMLInputElement>(null);
 
@@ -113,6 +114,7 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
     setResult(null);
     setDraft(null);
     setError(null);
+    setDuplicateOf(null);
   };
 
   const handleImagePick = (file: File | undefined, target: "post" | "comments") => {
@@ -150,6 +152,7 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
       return;
     }
     setError(null);
+    setDuplicateOf(null);
     setAnalyzing(true);
     setResult(null);
     setDraft(null);
@@ -169,6 +172,7 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
       setResult(data.analysis);
       setDraft(data.draft || null);
       if (data.duplicateOf) {
+        setDuplicateOf(data.duplicateOf);
         setError(`⚠️ رقم الهاتف موجود مسبقاً في السجل: ${data.duplicateOf}`);
       }
     } catch (e) {
@@ -180,13 +184,21 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
 
   const saveDraft = async () => {
     if (!draft) return;
+    if (!draft.phone?.trim()) {
+      setError("لا يمكن حفظ السجل دون رقم هاتف مصري صحيح — أدخله يدوياً بعد مراجعته");
+      return;
+    }
+    if (duplicateOf) {
+      setError("هذا الرقم مسجل بالفعل — غيّر الرقم أو راجع السجل الموجود قبل الحفظ");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       const res = await apiFetch("/api/admin/crm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
+        body: JSON.stringify({ ...draft, sourceType: "bot" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "فشل حفظ السجل");
@@ -506,7 +518,10 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
                   </select>
                 </label>
                 {field("الاسم", draft.name, (v) => setDraft({ ...draft, name: v }))}
-                {field("رقم الهاتف", draft.phone, (v) => setDraft({ ...draft, phone: v }), { dir: "ltr", type: "tel" })}
+                {field("رقم الهاتف", draft.phone, (v) => {
+                  setDraft({ ...draft, phone: v });
+                  setDuplicateOf(null);
+                }, { dir: "ltr", type: "tel" })}
                 <label className="block">
                   <span className="block text-[10px] font-black text-slate-600 mb-1">التصنيف</span>
                   <select
@@ -578,7 +593,7 @@ export default function GeminiBotPanel({ open, onClose, onSaved }: Props) {
               <button
                 type="button"
                 onClick={saveDraft}
-                disabled={saving}
+                disabled={saving || !draft.phone?.trim() || Boolean(duplicateOf)}
                 className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm shadow-md transition-all active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {saving ? (

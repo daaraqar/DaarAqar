@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
-import { dbStore } from "@/lib/db/store";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasAdminPermission } from "@/lib/auth/admin-permissions";
 import { batchGenerate, isGeminiConfigured, embedTexts } from "@/lib/services/geminiTools";
 import type { StoredClientRecord } from "@/lib/db/store";
+import {
+  CrmDuplicateError,
+  createCrmRecord,
+  findCrmRecordsByPhones,
+  getCrmRecords,
+  updateCrmRecord,
+} from "@/lib/services/crmRepository";
+import { normalizeCrmPhone } from "@/lib/services/crmUtils";
 
 export const maxDuration = 300;
 
@@ -36,7 +43,7 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage") && !hasAdminPermission(user, "support.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
     }
     if (!isGeminiConfigured()) {
@@ -61,22 +68,63 @@ export async function POST(req: Request) {
     // إنشاء سجلات غير مؤكدة من نتائج التحليل الناجحة
     const saved: StoredClientRecord[] = [];
     const failed: Array<{ key: string; error: string }> = [];
-    const crmRecords = dbStore.getClientRecords();
+    const crmRecords = await getCrmRecords();
+    const seenPhones = new Set(crmRecords.map((record) => normalizeCrmPhone(record.phone)));
 
     for (const result of batch) {
       if (result.error || !result.response) {
         failed.push({ key: result.key, error: result.error || "رد فارغ" });
         continue;
       }
+      let parsedValue: unknown;
       try {
-        const parsed = JSON.parse(result.response.replace(/```json\s*|\s*```/g, ""));
-        const phone = String(parsed.phone || "").replace(/[\s-]/g, "");
-        const dup = phone && crmRecords.find((r) => r.phone === phone);
-        const record = dbStore.createClientRecord(
+        parsedValue = JSON.parse(result.response.replace(/```json\s*|\s*```/g, ""));
+      } catch {
+        failed.push({ key: result.key, error: "تعذر قراءة JSON من النموذج" });
+        continue;
+      }
+      if (!parsedValue || typeof parsedValue !== "object" || Array.isArray(parsedValue)) {
+        failed.push({ key: result.key, error: "رد النموذج لا يحتوي على سجل منظم صالح" });
+        continue;
+      }
+      const parsed = parsedValue as Record<string, unknown>;
+      const phone = normalizeCrmPhone(String(parsed.phone || ""));
+      const name = String(parsed.name || "").trim();
+      if (!phone) {
+        failed.push({ key: result.key, error: "لم يُحفظ السجل: لم يستخرج البوت رقم هاتف مصرياً صالحاً" });
+        continue;
+      }
+      if (name.length < 2) {
+        failed.push({ key: result.key, error: "لم يُحفظ السجل: لم يستخرج البوت اسماً صالحاً" });
+        continue;
+      }
+      if (parsed.type !== "client" && parsed.type !== "broker") {
+        failed.push({ key: result.key, error: "لم يُحفظ السجل: نوع العميل أو السمسار غير واضح" });
+        continue;
+      }
+      if (
+        (parsed.type === "client" && !parsed.requestedProperty && !parsed.requestedCategory) ||
+        (parsed.type === "broker" && !parsed.availableListings)
+      ) {
+        failed.push({ key: result.key, error: "لم يُحفظ السجل: لم يستخرج البوت تفاصيل الطلب أو العرض العقاري" });
+        continue;
+      }
+      if (seenPhones.has(phone)) {
+        failed.push({ key: result.key, error: "تم تجاوز السجل لأن رقم الهاتف مسجل مسبقاً" });
+        continue;
+      }
+      const [duplicate] = await findCrmRecordsByPhones([phone]);
+      if (duplicate) {
+        failed.push({ key: result.key, error: `تم تجاوز السجل: الرقم مسجل باسم ${duplicate.name}` });
+        seenPhones.add(phone);
+        continue;
+      }
+      try {
+        const record = await createCrmRecord(
           {
-            type: parsed.type === "client" ? "client" : "broker",
-            name: String(parsed.name || `منشور دفعة ${result.key}`).slice(0, 120),
-            phone: phone || "01000000000",
+            type: parsed.type,
+            name: name.slice(0, 120),
+            phone,
             requestedCategory: parsed.requestedCategory ? String(parsed.requestedCategory).slice(0, 80) : undefined,
             requestedArea: Number.isFinite(Number(parsed.requestedArea)) && Number(parsed.requestedArea) > 0 ? Number(parsed.requestedArea) : undefined,
             requestedPriceRange: parsed.requestedPriceRange ? String(parsed.requestedPriceRange).slice(0, 120) : undefined,
@@ -89,7 +137,6 @@ export async function POST(req: Request) {
             notes: [
               `🤖 تحليل دفعة Batch — ${Math.round(Number(parsed.confidence || 0) * 100)}% ثقة`,
               parsed.notes ? String(parsed.notes).slice(0, 200) : "",
-              dup ? `⚠️ رقم مكرر مع سجل موجود` : "",
             ]
               .filter(Boolean)
               .join(" • ")
@@ -101,8 +148,14 @@ export async function POST(req: Request) {
           user
         );
         saved.push(record);
-      } catch {
-        failed.push({ key: result.key, error: "تعذر قراءة JSON من النموذج" });
+        seenPhones.add(phone);
+      } catch (error) {
+        const message = error instanceof CrmDuplicateError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : "تعذر حفظ السجل";
+        failed.push({ key: result.key, error: message });
       }
     }
 
@@ -132,14 +185,14 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح" }, { status: 403 });
     }
     if (!isGeminiConfigured()) {
       return NextResponse.json({ error: "الذكاء الاصطناعي غير مفعل" }, { status: 503 });
     }
 
-    const records = dbStore.getClientRecords();
+    const records = await getCrmRecords();
     const missing = records.filter((r) => !r.embedding?.length);
     if (!missing.length) {
       return NextResponse.json({ success: true, indexed: 0, message: "كل السجلات مفهرسة دلالياً بالفعل" });
@@ -164,11 +217,11 @@ export async function GET(req: Request) {
     for (let i = 0; i < missing.length; i += 100) {
       const chunk = texts.slice(i, i + 100);
       const vecs = await embedTexts(chunk);
-      vecs.forEach((vec, j) => {
+      for (let j = 0; j < vecs.length; j += 1) {
         const record = missing[i + j];
-        dbStore.updateClientRecord(record.id, { embedding: vec }, user);
+        await updateCrmRecord(record.id, { embedding: vecs[j] }, user);
         indexed++;
-      });
+      }
     }
 
     return NextResponse.json({

@@ -14,6 +14,7 @@
  * مُحدّث أكتوبر 2026 — أسماء النماذج مُتحقق منها فعلياً من مفتاح GEMINI_API_KEY */
 import { getTextModels, blacklistModel } from "./geminiModelRegistry";
 import { getGeminiAuth } from "./geminiAuth";
+import { normalizeCrmPhone } from "./crmUtils";
 const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export interface GeminiAnalyzedLead {
@@ -209,15 +210,15 @@ export async function analyzeSocialPostWithGemini(input: GeminiAnalyzeInput): Pr
       // Normalize & validate — never trust the model blindly
       const area = Number(parsed.requestedArea);
       const listings = Number(parsed.listingsCount);
-      const phoneRaw = String(parsed.phone || "").replace(/[\s-]/g, "");
+      const phone = normalizeCrmPhone(String(parsed.phone || ""));
 
       return {
         type: parsed.type === "client" ? "client" : "broker",
         intent: parsed.intent === "طلب" ? "طلب" : "عرض",
         name: String(parsed.name || "منشور فيسبوك").slice(0, 120),
-        phone: /^(\+?2)?01[0125][0-9]{8}$/.test(phoneRaw) ? phoneRaw : undefined,
+        phone: phone || undefined,
         extraPhones: Array.isArray(parsed.extraPhones)
-          ? parsed.extraPhones.map((p: any) => String(p).replace(/[\s-]/g, "")).filter(Boolean).slice(0, 5)
+          ? parsed.extraPhones.map((value: unknown) => normalizeCrmPhone(String(value || ""))).filter(Boolean).slice(0, 5)
           : [],
         requestedProperty: parsed.requestedProperty ? String(parsed.requestedProperty).slice(0, 300) : undefined,
         requestedCategory: parsed.requestedCategory ? String(parsed.requestedCategory).slice(0, 80) : undefined,

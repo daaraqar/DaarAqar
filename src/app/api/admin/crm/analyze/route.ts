@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
-import { dbStore } from "@/lib/db/store";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hasAdminPermission } from "@/lib/auth/admin-permissions";
+import {
+  CrmDuplicateError,
+  createCrmRecord,
+  findCrmRecordsByPhones,
+} from "@/lib/services/crmRepository";
+import { normalizeCrmPhone } from "@/lib/services/crmUtils";
 import {
   analyzeSocialPostWithGemini,
   isGeminiConfigured,
@@ -23,7 +28,7 @@ export async function POST(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "يجب تسجيل الدخول كمسؤول للنظام" }, { status: 401 });
     }
-    if (!hasAdminPermission(user, "staff.manage") && !hasAdminPermission(user, "support.manage")) {
+    if (!hasAdminPermission(user, "crm.manage")) {
       return NextResponse.json({ error: "غير مصرح، يتطلب صلاحية إدارة السجلات" }, { status: 403 });
     }
     if (!isGeminiConfigured()) {
@@ -75,9 +80,10 @@ export async function POST(req: Request) {
     });
 
     // 2) Duplicate guard — same phone already recorded?
+    const extractedPhone = normalizeCrmPhone(String(analysis.phone || ""));
     let duplicateOf: string | null = null;
-    if (analysis.phone) {
-      const existing = dbStore.getClientRecords().find((r) => r.phone === analysis.phone);
+    if (extractedPhone) {
+      const [existing] = await findCrmRecordsByPhones([extractedPhone]);
       if (existing) duplicateOf = `${existing.name} (${existing.phone})`;
     }
 
@@ -85,7 +91,7 @@ export async function POST(req: Request) {
     const recordDraft = {
       type: analysis.type as "client" | "broker",
       name: analysis.name,
-      phone: analysis.phone || "01000000000", // placeholder when missing — flagged for admin
+      phone: extractedPhone,
       requestedProperty: analysis.requestedProperty,
       requestedCategory: analysis.requestedCategory,
       requestedArea: analysis.requestedArea,
@@ -117,10 +123,14 @@ export async function POST(req: Request) {
     };
 
     // If phone missing and no image proof, don't auto-save — return draft only
-    const shouldAutoSave = autoSave === true && Boolean(analysis.phone);
+    const hasRequiredDetails = analysis.type === "client"
+      ? Boolean(analysis.requestedProperty || analysis.requestedCategory)
+      : Boolean(analysis.availableListings);
+    const shouldAutoSave =
+      autoSave === true && Boolean(extractedPhone) && !duplicateOf && hasRequiredDetails;
 
     if (shouldAutoSave) {
-      const record = dbStore.createClientRecord(recordDraft, user);
+      const record = await createCrmRecord(recordDraft, user);
       return NextResponse.json({
         success: true,
         saved: true,
@@ -138,11 +148,16 @@ export async function POST(req: Request) {
       analysis,
       duplicateOf,
       urlFetchNote,
-      message: analysis.phone
+      message: duplicateOf
+        ? "هذا الرقم مسجل بالفعل — راجع السجل الموجود قبل إنشاء سجل جديد"
+        : extractedPhone
         ? "تم التحليل بنجاح — راجع البيانات ثم اضغط حفظ"
         : "تم التحليل لكن رقم الهاتف غير موجود — أكمله يدوياً قبل الحفظ",
     });
   } catch (err: unknown) {
+    if (err instanceof CrmDuplicateError) {
+      return NextResponse.json({ error: err.message, duplicate: err.duplicate }, { status: 409 });
+    }
     const message =
       err instanceof Error ? err.message : "خطأ أثناء تحليل المنشور بالذكاء الاصطناعي";
     console.error("[crm/analyze]", err);

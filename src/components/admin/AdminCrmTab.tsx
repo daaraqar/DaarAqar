@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/apiClient";
 import GeminiBotPanel from "./GeminiBotPanel";
+import AdminCrmImportDialog from "./AdminCrmImportDialog";
 import {
   Users,
   Phone,
@@ -22,6 +23,8 @@ import {
   CircleDashed,
   Bot,
   SlidersHorizontal,
+  FileSpreadsheet,
+  Download,
 } from "lucide-react";
 
 interface ClientRecord {
@@ -122,6 +125,7 @@ export default function AdminCrmTab() {
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ClientRecord | null>(null);
   const [botPanelOpen, setBotPanelOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
 
@@ -132,6 +136,9 @@ export default function AdminCrmTab() {
       if (res.ok) {
         const data = await res.json();
         setRecords(data.records || []);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setFeedback({ type: "error", text: data.error || "تعذر تحميل سجلات CRM" });
       }
     } catch (err) {
       console.error("Failed to fetch CRM records:", err);
@@ -328,6 +335,38 @@ export default function AdminCrmTab() {
   const clientsCount = records.filter((r) => r.type === "client").length;
   const brokersCount = records.filter((r) => r.type === "broker").length;
 
+  const exportFilteredRecords = () => {
+    const columns: Array<[string, (record: ClientRecord) => string]> = [
+      ["النوع", (record) => record.type === "client" ? "عميل" : "سمسار"],
+      ["الاسم", (record) => record.name],
+      ["الهاتف", (record) => record.phone],
+      ["العقار المطلوب", (record) => record.requestedProperty || ""],
+      ["التصنيف", (record) => record.requestedCategory || ""],
+      ["المساحة", (record) => record.requestedArea ? String(record.requestedArea) : ""],
+      ["الميزانية", (record) => record.requestedPriceRange || ""],
+      ["نوع الصفقة", (record) => record.transactionType === "rent" ? "إيجار" : record.transactionType === "sale" ? "بيع" : ""],
+      ["الموقع", (record) => record.requestedLocation || ""],
+      ["العروض", (record) => record.availableListings || ""],
+      ["ملاحظات", (record) => record.notes || ""],
+      ["تاريخ الإنشاء", (record) => record.createdAt],
+    ];
+    const escapeCsv = (value: string) => {
+      const safeValue = /^[\s]*[=+\-@]/.test(value) ? `'${value}` : value;
+      return `"${safeValue.replace(/"/g, '""')}"`;
+    };
+    const content = [
+      columns.map(([label]) => escapeCsv(label)).join(","),
+      ...filtered.map((record) => columns.map(([, getValue]) => escapeCsv(getValue(record))).join(",")),
+    ].join("\r\n");
+    const blob = new Blob(["\uFEFF", content], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `crm-records-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const formatDate = (iso: string) => {
     try {
       return new Date(iso).toLocaleDateString("ar-EG", { year: "numeric", month: "short", day: "numeric" });
@@ -355,6 +394,23 @@ export default function AdminCrmTab() {
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-emerald-600" : ""}`} />
             <span className="hidden sm:inline">تحديث</span>
+          </button>
+          <button
+            onClick={() => setImportDialogOpen(true)}
+            className="px-3 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-black shadow-sm transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+            title="استيراد سجلات من Excel أو CSV"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>استيراد ملف</span>
+          </button>
+          <button
+            onClick={exportFilteredRecords}
+            disabled={!filtered.length}
+            className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            title="تصدير النتائج الحالية إلى CSV"
+          >
+            <Download className="w-4 h-4" />
+            <span>تصدير</span>
           </button>
           <button
             onClick={() => setBotPanelOpen(true)}
@@ -923,6 +979,15 @@ export default function AdminCrmTab() {
         onClose={() => setBotPanelOpen(false)}
         onSaved={fetchRecords}
       />
+      {importDialogOpen && (
+        <AdminCrmImportDialog
+          onClose={() => setImportDialogOpen(false)}
+          onImported={(message) => {
+            setFeedback({ type: "success", text: message });
+            fetchRecords();
+          }}
+        />
+      )}
     </div>
   );
 }

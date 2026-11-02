@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/apiClient";
 import { CATEGORY_LABELS_AR } from "@/lib/db/types";
 import type { ProjectAuditEntry } from "@/lib/db/store";
+import AdminReviewQueue from "@/components/admin/AdminReviewQueue";
 import {
   Building2,
   CheckCircle2,
@@ -173,6 +174,7 @@ export default function AdminProjectsTab({
       });
       const data = await res.json();
       if (res.ok) {
+        window.dispatchEvent(new Event("admin-review-tasks-updated"));
         setFeedback({ type: "success", text: `تمت الموافقة على المشروع "${prop.title}" وتفعيله بنجاح!` });
         // Immediate reactive local state update
         setProperties((prev) =>
@@ -213,6 +215,7 @@ export default function AdminProjectsTab({
       });
       const data = await res.json();
       if (res.ok) {
+        window.dispatchEvent(new Event("admin-review-tasks-updated"));
         setFeedback({ type: "success", text: `تم تسجيل رفض المشروع "${prop.title}".` });
         setProperties((prev) =>
           prev.map((p) =>
@@ -256,6 +259,7 @@ export default function AdminProjectsTab({
       });
       const data = await res.json();
       if (res.ok) {
+        window.dispatchEvent(new Event("admin-review-tasks-updated"));
         setFeedback({ type: "success", text: `تم تعليق المشروع "${prop.title}" مؤقتاً بنجاح.` });
         setProperties((prev) =>
           prev.map((p) =>
@@ -291,6 +295,7 @@ export default function AdminProjectsTab({
       });
       const data = await res.json();
       if (res.ok) {
+        window.dispatchEvent(new Event("admin-review-tasks-updated"));
         setFeedback({ type: "success", text: `تمت إعادة المشروع "${prop.title}" إلى قائمة قيد المراجعة.` });
         setProperties((prev) =>
           prev.map((p) => (p.id === prop.id ? { ...p, status: "pending_review" } : p))
@@ -325,6 +330,7 @@ export default function AdminProjectsTab({
       });
       const data = await res.json();
       if (res.ok) {
+        window.dispatchEvent(new Event("admin-review-tasks-updated"));
         setFeedback({ type: "success", text: `تمت إزالة المشروع "${prop.title}" نهائياً.` });
         setProperties((prev) => prev.filter((p) => p.id !== prop.id));
         if (selectedProject?.id === prop.id) {
@@ -561,6 +567,7 @@ export default function AdminProjectsTab({
 
   return (
     <div className="space-y-4 max-w-5xl mx-auto">
+      {canReview && <AdminReviewQueue />}
       {/* 1. Header with refresh button */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <div>

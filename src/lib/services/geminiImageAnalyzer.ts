@@ -16,6 +16,7 @@ const GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta";
 
 // اكتشاف النماذج ديناميكياً من الوحدة المركزية المشتركة — لا قوائم ثابتة
 import { getTextModels, blacklistModel } from "./geminiModelRegistry";
+import { normalizeEgyptianPhone, toAsciiDigits } from "@/lib/auth/security";
 
 export interface ExtractedEntry {
   name: string;
@@ -192,22 +193,23 @@ export async function analyzeImagesOnly(input: {
       const p = extractJson(text);
 
       // تطبيع — لا نثق بالنموذج أعمى
+      const normalizePhone = (value: unknown) => {
+        const normalized = normalizeEgyptianPhone(toAsciiDigits(String(value || "")));
+        return /^\+201[0125]\d{8}$/.test(normalized) ? normalized : undefined;
+      };
       const people: ExtractedEntry[] = Array.isArray(p.people)
         ? p.people
           .filter((x: any) => x && (x.name || x.phone))
           .map((x: any) => ({
             name: String(x.name || "مجهول").slice(0, 120),
-            phone: /^(\+?2)?01[0125][0-9]{8}$/.test(String(x.phone || "").replace(/[\s-]/g, ""))
-              ? String(x.phone).replace(/[\s-]/g, "")
-              : undefined,
+            phone: normalizePhone(x.phone),
             role: x.role ? String(x.role).slice(0, 40) : undefined,
             comment: x.comment ? String(x.comment).slice(0, 200) : undefined,
           }))
           .slice(0, 30)
         : [];
 
-      const phoneRaw = String(p.phone || people.find((x) => x.phone)?.phone || "").replace(/[\s-]/g, "");
-      const mainPhone = /^(\+?2)?01[0125][0-9]{8}$/.test(phoneRaw) ? phoneRaw : undefined;
+      const mainPhone = normalizePhone(p.phone) || people.find((x) => x.phone)?.phone;
 
       const area = Number(p.requestedArea);
       const priceMin = Number(p.priceMin);
@@ -226,7 +228,7 @@ export async function analyzeImagesOnly(input: {
       const draft = {
         type: isClient ? ("client" as const) : ("broker" as const),
         name: String(p.name || people[0]?.name || "منشور صورة").slice(0, 120),
-        phone: mainPhone || "01000000000",
+        phone: mainPhone,
         requestedProperty: p.requestedProperty ? String(p.requestedProperty).slice(0, 300) : undefined,
         requestedCategory: p.requestedCategory ? String(p.requestedCategory).slice(0, 80) : undefined,
         requestedArea: Number.isFinite(area) && area > 0 ? area : undefined,
