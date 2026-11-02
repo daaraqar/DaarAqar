@@ -1,5 +1,5 @@
 -- ==============================================================================
--- Migration: 20261015070000_optimize_clean_storage_rls.sql
+-- Migration: 20261102123919_optimize_clean_storage_rls.sql
 -- Description:
 --   Purges all legacy, duplicate, and fragmented RLS policies on storage.objects
 --   and establishes the 4 canonical, ultra-fast storage policies for
@@ -8,10 +8,10 @@
 
 -- 1. Ensure storage buckets exist and are public
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES 
+VALUES
     ('property-images', 'property-images', true, 10485760, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
     ('avatars', 'avatars', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-ON CONFLICT (id) DO UPDATE SET 
+ON CONFLICT (id) DO UPDATE SET
     public = true,
     file_size_limit = EXCLUDED.file_size_limit,
     allowed_mime_types = EXCLUDED.allowed_mime_types;
@@ -21,9 +21,9 @@ DO $$
 DECLARE
     pol record;
 BEGIN
-    FOR pol IN 
-        SELECT policyname 
-        FROM pg_policies 
+    FOR pol IN
+        SELECT policyname
+        FROM pg_policies
         WHERE schemaname = 'storage' AND tablename = 'objects'
     LOOP
         EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects;', pol.policyname);
@@ -33,21 +33,21 @@ END $$;
 -- Supabase manages storage.objects and enables RLS when the table is created.
 -- Do not ALTER this managed table; the migration role may not own it.
 
--- 4. Establish the 4 Canonical Storage Policies
+-- 3. Establish the 4 canonical Storage policies
 
--- Policy 1: Public Read Access (Ultra-fast direct read for public assets)
+-- Policy 1: Public read access for public assets
 CREATE POLICY "canonical_storage_public_read"
 ON storage.objects FOR SELECT
 TO public
 USING (bucket_id IN ('property-images', 'avatars'));
 
--- Policy 2: Authenticated Uploads
+-- Policy 2: Authenticated uploads
 CREATE POLICY "canonical_storage_authenticated_insert"
 ON storage.objects FOR INSERT
 TO authenticated
 WITH CHECK (bucket_id IN ('property-images', 'avatars'));
 
--- Policy 3: Authenticated Updates (Owner or Admin)
+-- Policy 3: Authenticated updates (owner or admin)
 CREATE POLICY "canonical_storage_authenticated_update"
 ON storage.objects FOR UPDATE
 TO authenticated
@@ -57,8 +57,8 @@ USING (
         (SELECT auth.uid())::text = (storage.foldername(name))[1]
         OR (SELECT auth.uid())::text = owner::text
         OR EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE profiles.id = (SELECT auth.uid()) 
+            SELECT 1 FROM public.profiles
+            WHERE profiles.id = (SELECT auth.uid())
               AND profiles.role::text IN ('admin', 'superadmin', 'moderator')
         )
     )
@@ -67,7 +67,7 @@ WITH CHECK (
     bucket_id IN ('property-images', 'avatars')
 );
 
--- Policy 4: Authenticated Deletions (Owner or Admin)
+-- Policy 4: Authenticated deletions (owner or admin)
 CREATE POLICY "canonical_storage_authenticated_delete"
 ON storage.objects FOR DELETE
 TO authenticated
@@ -77,8 +77,8 @@ USING (
         (SELECT auth.uid())::text = (storage.foldername(name))[1]
         OR (SELECT auth.uid())::text = owner::text
         OR EXISTS (
-            SELECT 1 FROM public.profiles 
-            WHERE profiles.id = (SELECT auth.uid()) 
+            SELECT 1 FROM public.profiles
+            WHERE profiles.id = (SELECT auth.uid())
               AND profiles.role::text IN ('admin', 'superadmin', 'moderator')
         )
     )

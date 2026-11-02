@@ -32,7 +32,7 @@ END $$;
 -- Supabase manages storage.objects and enables RLS when the table is created.
 -- Do not ALTER this managed table; the migration role may not own it.
 
--- 4. Establish the 4 Canonical Storage Policies
+-- 3. Establish the 4 Canonical Storage Policies
 
 -- Policy 1: Public Read Access (Ultra-fast direct read for public assets)
 CREATE POLICY "canonical_storage_public_read"
