@@ -251,6 +251,18 @@ WITH CHECK (
 );
 
 -- 8. PostGIS Spatial RPC Functions
+DROP FUNCTION IF EXISTS public.search_properties_within_bounds(
+    DOUBLE PRECISION,
+    DOUBLE PRECISION,
+    DOUBLE PRECISION,
+    DOUBLE PRECISION,
+    public.transaction_type_enum,
+    CHARACTER VARYING,
+    NUMERIC,
+    NUMERIC,
+    INTEGER
+);
+
 CREATE OR REPLACE FUNCTION public.search_properties_within_bounds(
     min_lng DOUBLE PRECISION,
     min_lat DOUBLE PRECISION,
