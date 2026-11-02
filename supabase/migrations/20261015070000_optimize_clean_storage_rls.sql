@@ -30,8 +30,8 @@ BEGIN
     END LOOP;
 END $$;
 
--- 3. Ensure Row Level Security is enabled
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+-- Supabase manages storage.objects and enables RLS when the table is created.
+-- Do not ALTER this managed table; the migration role may not own it.
 
 -- 4. Establish the 4 Canonical Storage Policies
 
