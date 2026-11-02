@@ -80,7 +80,6 @@ $$ LANGUAGE plpgsql STABLE;
 
 -- Grant execution to public / anon / authenticated roles
 GRANT EXECUTE ON FUNCTION public.search_properties_within_bounds TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.search_properties_within_radius TO anon, authenticated;
 
 -- 2. Clean Egyptian Geography Hierarchy (Reference Data Only)
 DO $$
