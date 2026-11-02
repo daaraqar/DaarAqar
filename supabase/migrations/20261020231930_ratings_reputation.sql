@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS rating_reports_status_created_idx
     ON public.rating_reports (status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS public.ratings_config (
-    id BOOLEAN PRIMARY KEY DEFAULT true CHECK (id),
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
     seller_ratings_enabled BOOLEAN NOT NULL DEFAULT true,
     seller_badge_enabled BOOLEAN NOT NULL DEFAULT true,
     project_badge_enabled BOOLEAN NOT NULL DEFAULT true,
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS public.ratings_config (
 );
 
 INSERT INTO public.ratings_config (id)
-VALUES (true)
+VALUES (1)
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS public.rating_badge_overrides (

@@ -90,6 +90,8 @@ test("ratings migration establishes server-only access and explicit defaults", (
   assert.match(migration, /seller_min_rating NUMERIC\(2, 1\) NOT NULL DEFAULT 4\.5/);
   assert.match(migration, /project_min_favorites INTEGER NOT NULL DEFAULT 10/);
   assert.match(migration, /project_window_days INTEGER NOT NULL DEFAULT 30/);
+  assert.match(migration, /id INTEGER PRIMARY KEY DEFAULT 1 CHECK \(id = 1\)/);
+  assert.match(migration, /INSERT INTO public\.ratings_config \(id\)\s+VALUES \(1\)/);
   assert.match(migration, /ALTER TABLE public\.seller_reviews ENABLE ROW LEVEL SECURITY/);
   assert.match(migration, /REVOKE ALL ON public\.seller_reviews/);
   assert.match(migration, /TO service_role/);
